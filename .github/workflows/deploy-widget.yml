@@ -43,37 +43,43 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get CloudFront Distribution ID
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.5.0'
+
+      - name: Get CloudFront Distribution ID from Terraform
         id: get-cf-id
+        working-directory: ./widget-sdk/terraform
         run: |
-          # Try to get from Terraform output first
-          if [ -f "terraform/terraform.tfstate" ] || [ -f "../terraform/terraform.tfstate" ]; then
-            echo "Getting CloudFront ID from Terraform..."
-            DIST_ID=$(cd terraform && terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
-          fi
+          # Initialize Terraform to access remote state
+          terraform init -backend-config="bucket=scenaro-tfstate" \
+                         -backend-config="key=scenaro/widget-sdk/production/terraform.tfstate" \
+                         -backend-config="region=eu-west-3" \
+                         -backend-config="dynamodb_table=scenaro-tf-locks" \
+                         -backend-config="encrypt=true" \
+                         -input=false
           
-          # If not found, try to find by alias or comment
-          if [ -z "$DIST_ID" ]; then
-            echo "Searching AWS for CloudFront distribution with alias cdn.scenaro.io..."
-            DIST_ID=$(aws cloudfront list-distributions \
-              --query "DistributionList.Items[?Aliases.Items[?@=='cdn.scenaro.io']].Id" \
-              --output text 2>/dev/null || echo "")
-          fi
+          # Get CloudFront distribution ID from Terraform output
+          DIST_ID=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
           
-          # If still not found, try by bucket name
-          if [ -z "$DIST_ID" ]; then
-            echo "Searching by S3 bucket origin..."
-            DIST_ID=$(aws cloudfront list-distributions \
-              --query "DistributionList.Items[?Origins.Items[?DomainName=='scenaro-widget-sdk-cdn.s3.${AWS_REGION}.amazonaws.com' || contains(DomainName, 'scenaro-widget-sdk-cdn')]].Id" \
-              --output text 2>/dev/null || echo "")
-          fi
-          
-          if [ -z "$DIST_ID" ]; then
-            echo "::warning::CloudFront distribution not found. Cache invalidation will be skipped."
-            echo "distribution_id=" >> $GITHUB_OUTPUT
-          else
-            echo "Found CloudFront Distribution ID: $DIST_ID"
+          if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "null" ]; then
             echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+            echo "✓ Found CloudFront Distribution ID from Terraform: $DIST_ID"
+          else
+            # Fallback: Query AWS directly by domain alias
+            echo "Terraform output not available, querying AWS..."
+            DIST_ID=$(aws cloudfront list-distributions \
+              --query "DistributionList.Items[?Aliases.Items[?contains(@, 'cdn.scenaro.io')]].Id" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$DIST_ID" ]; then
+              echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+              echo "✓ Found CloudFront Distribution ID from AWS: $DIST_ID"
+            else
+              echo "distribution_id=" >> $GITHUB_OUTPUT
+              echo "⚠ Warning: CloudFront distribution not found. Cache invalidation will be skipped."
+            fi
           fi
 
       - name: Deploy to S3
@@ -97,3 +103,4 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id ${{ steps.get-cf-id.outputs.distribution_id }} \
             --paths "/*"
+        continue-on-error: true
