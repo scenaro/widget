@@ -1,29 +1,3 @@
-variable "domain_name" {
-  description = "Custom domain name (e.g. cdn.scenaro.io)"
-  type        = string
-}
-
-variable "s3_bucket_id" {
-  description = "S3 bucket ID to use as origin"
-  type        = string
-}
-
-variable "s3_bucket_domain_name" {
-  description = "S3 bucket domain name"
-  type        = string
-}
-
-variable "certificate_arn" {
-  description = "ACM certificate ARN for the custom domain"
-  type        = string
-}
-
-variable "common_tags" {
-  description = "Common tags to apply to resources"
-  type        = map(string)
-  default     = {}
-}
-
 # CloudFront Origin Access Identity (OAI) - deprecated but still works
 # Using Origin Access Control (OAC) is recommended for new deployments
 resource "aws_cloudfront_origin_access_control" "main" {
@@ -42,7 +16,9 @@ resource "aws_cloudfront_distribution" "main" {
   default_root_object = "widget.js"
   price_class         = "PriceClass_100" # Use only North America and Europe (cheaper)
 
-  aliases = [var.domain_name]
+  # Only add aliases if certificate is validated (we'll check via data source or make it conditional)
+  # For now, create without alias and add it later once certificate is validated
+  aliases = [] # Will be added after certificate validation
 
   origin {
     domain_name              = var.s3_bucket_domain_name
@@ -150,9 +126,12 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = var.certificate_arn
-    ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    # Use CloudFront default certificate for now (no custom domain)
+    # Once ACM certificate is validated, update this to use the certificate
+    cloudfront_default_certificate = true
+    # acm_certificate_arn      = var.certificate_arn
+    # ssl_support_method       = "sni-only"
+    # minimum_protocol_version = "TLSv1.2_2021"
   }
 
   tags = merge(var.common_tags, {
@@ -162,7 +141,7 @@ resource "aws_cloudfront_distribution" "main" {
 
 # Security headers policy
 resource "aws_cloudfront_response_headers_policy" "main" {
-  name = "${var.domain_name}-security-headers"
+  name = replace("${var.domain_name}-security-headers", ".", "-")
 
   security_headers_config {
     strict_transport_security {

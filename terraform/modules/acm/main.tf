@@ -1,24 +1,11 @@
-variable "domain_name" {
-  description = "Domain name for the certificate (e.g. cdn.scenaro.io)"
-  type        = string
-}
-
-variable "zone_id" {
-  description = "Route53 hosted zone ID for DNS validation (optional)"
-  type        = string
-  default     = ""
-}
-
-variable "common_tags" {
-  description = "Common tags to apply to resources"
-  type        = map(string)
-  default     = {}
-}
-
-# ACM Certificate (must be in us-east-1 for CloudFront)
-provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
+terraform {
+  required_providers {
+    aws = {
+      source                = "hashicorp/aws"
+      version               = "~> 5.0"
+      configuration_aliases = [aws.us_east_1]
+    }
+  }
 }
 
 resource "aws_acm_certificate" "main" {
@@ -36,15 +23,17 @@ resource "aws_acm_certificate" "main" {
 }
 
 # DNS validation record (if Route53 zone_id is provided)
+# Note: If zone_id is not provided, this resource will be skipped
+# and certificate validation must be done manually via DNS records
 resource "aws_acm_certificate_validation" "main" {
-  provider        = aws.us_east_1
+  count    = var.zone_id != "" ? 1 : 0
+  provider = aws.us_east_1
+  
   certificate_arn = aws_acm_certificate.main.arn
 
-  # If zone_id is provided, create validation records automatically
-  # Otherwise, manual DNS validation is required
-  validation_record_fqdns = var.zone_id != "" ? [
+  validation_record_fqdns = [
     for record in aws_route53_record.cert_validation : record.fqdn
-  ] : []
+  ]
 
   timeouts {
     create = "5m"
@@ -67,6 +56,6 @@ output "certificate_arn" {
 }
 
 output "certificate_validation_arn" {
-  value = aws_acm_certificate_validation.main.certificate_arn
+  value = var.zone_id != "" ? aws_acm_certificate_validation.main[0].certificate_arn : aws_acm_certificate.main.arn
 }
 
