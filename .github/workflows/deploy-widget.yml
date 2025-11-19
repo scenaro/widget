@@ -43,6 +43,39 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Get CloudFront Distribution ID
+        id: get-cf-id
+        run: |
+          # Try to get from Terraform output first
+          if [ -f "terraform/terraform.tfstate" ] || [ -f "../terraform/terraform.tfstate" ]; then
+            echo "Getting CloudFront ID from Terraform..."
+            DIST_ID=$(cd terraform && terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
+          fi
+          
+          # If not found, try to find by alias or comment
+          if [ -z "$DIST_ID" ]; then
+            echo "Searching AWS for CloudFront distribution with alias cdn.scenaro.io..."
+            DIST_ID=$(aws cloudfront list-distributions \
+              --query "DistributionList.Items[?Aliases.Items[?@=='cdn.scenaro.io']].Id" \
+              --output text 2>/dev/null || echo "")
+          fi
+          
+          # If still not found, try by bucket name
+          if [ -z "$DIST_ID" ]; then
+            echo "Searching by S3 bucket origin..."
+            DIST_ID=$(aws cloudfront list-distributions \
+              --query "DistributionList.Items[?Origins.Items[?DomainName=='scenaro-widget-sdk-cdn.s3.${AWS_REGION}.amazonaws.com' || contains(DomainName, 'scenaro-widget-sdk-cdn')]].Id" \
+              --output text 2>/dev/null || echo "")
+          fi
+          
+          if [ -z "$DIST_ID" ]; then
+            echo "::warning::CloudFront distribution not found. Cache invalidation will be skipped."
+            echo "distribution_id=" >> $GITHUB_OUTPUT
+          else
+            echo "Found CloudFront Distribution ID: $DIST_ID"
+            echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+          fi
+
       - name: Deploy to S3
         working-directory: ./widget-sdk
         run: |
@@ -58,12 +91,9 @@ jobs:
             --cache-control "public, max-age=3600"
 
       - name: Invalidate CloudFront cache
+        if: steps.get-cf-id.outputs.distribution_id != ''
         run: |
-          DISTRIBUTION_ID=${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
-          if [ -n "$DISTRIBUTION_ID" ]; then
-            aws cloudfront create-invalidation \
-              --distribution-id $DISTRIBUTION_ID \
-              --paths "/*"
-          else
-            echo "CloudFront distribution ID not set, skipping invalidation"
-          fi
+          echo "Invalidating CloudFront cache for distribution: ${{ steps.get-cf-id.outputs.distribution_id }}"
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.get-cf-id.outputs.distribution_id }} \
+            --paths "/*"
