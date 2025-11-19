@@ -1,0 +1,20 @@
+{
+  "name": "widget-sdk",
+  "version": "0.1.0",
+  "description": "Scenaro Widget SDK for embedding conversation experiences",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest"
+  },
+  "keywords": ["scenaro", "widget", "sdk", "embed"],
+  "author": "Scenaro",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.5"
+  }
+}
+
