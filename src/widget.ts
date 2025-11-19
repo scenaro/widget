@@ -122,7 +122,12 @@ class ScenaroWidget {
 
     // Fetch scenario config if we have a scenario UUID
     if (this.config.scenaroId) {
-      this.widgetConfig = await this.fetchScenarioConfig(this.config.scenaroId);
+      try {
+        this.widgetConfig = await this.fetchScenarioConfig(this.config.scenaroId);
+        console.log('[Scenaro] Fetched widget config:', this.widgetConfig);
+      } catch (e) {
+        console.warn('[Scenaro] Failed to fetch widget config, using defaults');
+      }
     }
 
     await this.createIframe(config);
