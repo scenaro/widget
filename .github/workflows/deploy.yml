@@ -1,4 +1,4 @@
-name: Deploy Widget SDK
+name: Deploy to AWS
 
 on:
   push:
