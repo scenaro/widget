@@ -16,9 +16,7 @@ resource "aws_cloudfront_distribution" "main" {
   default_root_object = "widget.js"
   price_class         = "PriceClass_100" # Use only North America and Europe (cheaper)
 
-  # Only add aliases if certificate is validated (we'll check via data source or make it conditional)
-  # For now, create without alias and add it later once certificate is validated
-  aliases = [] # Will be added after certificate validation
+  aliases = [var.domain_name]
 
   origin {
     domain_name              = var.s3_bucket_domain_name
@@ -126,12 +124,9 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   viewer_certificate {
-    # Use CloudFront default certificate for now (no custom domain)
-    # Once ACM certificate is validated, update this to use the certificate
-    cloudfront_default_certificate = true
-    # acm_certificate_arn      = var.certificate_arn
-    # ssl_support_method       = "sni-only"
-    # minimum_protocol_version = "TLSv1.2_2021"
+    acm_certificate_arn      = var.certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 
   tags = merge(var.common_tags, {

@@ -34,6 +34,8 @@ resource "aws_acm_certificate_validation" "main" {
   validation_record_fqdns = [
     for record in aws_route53_record.cert_validation : record.fqdn
   ]
+  
+  depends_on = [aws_route53_record.cert_validation]
 
   timeouts {
     create = "5m"
@@ -42,13 +44,20 @@ resource "aws_acm_certificate_validation" "main" {
 
 # Route53 validation records (only if zone_id is provided)
 resource "aws_route53_record" "cert_validation" {
-  count   = var.zone_id != "" ? length(aws_acm_certificate.main.domain_validation_options) : 0
-  zone_id = var.zone_id
+  for_each = var.zone_id != "" ? {
+    for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  } : {}
 
-  name    = aws_acm_certificate.main.domain_validation_options[count.index].resource_record_name
-  type    = aws_acm_certificate.main.domain_validation_options[count.index].resource_record_type
-  records = [aws_acm_certificate.main.domain_validation_options[count.index].resource_record_value]
-  ttl     = 60
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = var.zone_id
 }
 
 output "certificate_arn" {

@@ -26,6 +26,12 @@ provider "aws" {
   region = "us-east-1"
 }
 
+# Route53 hosted zone for scenaro.io
+data "aws_route53_zone" "main" {
+  name         = "scenaro.io"
+  private_zone = false
+}
+
 locals {
   domain_name = "cdn.scenaro.io"
   bucket_name = "scenaro-widget-sdk-cdn"
@@ -45,7 +51,7 @@ module "acm" {
   }
 
   domain_name = local.domain_name
-  # zone_id = "Z1234567890ABC" # Uncomment and set if using Route53 for automatic DNS validation
+  zone_id     = data.aws_route53_zone.main.zone_id
   common_tags = local.common_tags
 }
 
@@ -65,7 +71,7 @@ module "cloudfront" {
   domain_name            = local.domain_name
   s3_bucket_id           = module.s3.bucket_id
   s3_bucket_domain_name  = module.s3.bucket_domain_name
-  certificate_arn        = module.acm.certificate_arn
+  certificate_arn        = module.acm.certificate_validation_arn
   common_tags            = local.common_tags
 }
 
@@ -97,18 +103,18 @@ resource "aws_s3_bucket_policy" "main" {
   depends_on = [module.cloudfront]
 }
 
-# Route53 record for custom domain (optional - uncomment if using Route53)
-# resource "aws_route53_record" "cdn" {
-#   zone_id = "Z1234567890ABC" # Your Route53 hosted zone ID
-#   name    = local.domain_name
-#   type    = "A"
-#
-#   alias {
-#     name                   = module.cloudfront.distribution_domain_name
-#     zone_id                = module.cloudfront.distribution_hosted_zone_id
-#     evaluate_target_health = false
-#   }
-# }
+# Route53 record for custom domain
+resource "aws_route53_record" "cdn" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = local.domain_name
+  type    = "A"
+
+  alias {
+    name                   = module.cloudfront.distribution_domain_name
+    zone_id                = module.cloudfront.distribution_hosted_zone_id
+    evaluate_target_health = false
+  }
+}
 
 output "s3_bucket_id" {
   value = module.s3.bucket_id
