@@ -1,5 +1,5 @@
 export interface ScenaroConfig {
-  scenaroId: string;
+  scenarioUuid: string;
   scenarioUrl?: string;
   engineUrl?: string;
   iframeUrl?: string;
