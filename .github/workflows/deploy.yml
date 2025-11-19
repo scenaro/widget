@@ -32,11 +32,9 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        working-directory: ./widget-sdk
         run: npm ci
 
       - name: Build
-        working-directory: ./widget-sdk
         run: npm run build
 
       - name: Configure AWS credentials
@@ -52,7 +50,7 @@ jobs:
 
       - name: Get CloudFront Distribution ID from Terraform
         id: get-cf-id
-        working-directory: ./widget-sdk/terraform
+        working-directory: ./terraform
         run: |
           # Initialize Terraform to access remote state
           terraform init -backend-config="bucket=scenaro-tfstate" \
@@ -85,7 +83,6 @@ jobs:
           fi
 
       - name: Deploy to S3
-        working-directory: ./widget-sdk
         run: |
           aws s3 sync dist/ s3://scenaro-widget-sdk-cdn/ \
             --delete \

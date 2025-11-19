@@ -19,25 +19,20 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        working-directory: ./widget-sdk
         run: npm ci
 
       - name: Lint
-        working-directory: ./widget-sdk
         run: npm run lint || echo "Lint not configured, skipping"
         continue-on-error: true
 
       - name: Build
-        working-directory: ./widget-sdk
         run: npm run build
 
       - name: Test
-        working-directory: ./widget-sdk
         run: npm run test || echo "Tests not configured, skipping"
         continue-on-error: true
 
       - name: Check build output
-        working-directory: ./widget-sdk
         run: |
           if [ ! -d "dist" ]; then
             echo "Error: dist directory not found after build"
@@ -65,14 +60,14 @@ jobs:
           terraform_version: '1.5.0'
 
       - name: Terraform Format Check
-        working-directory: ./widget-sdk/terraform
+        working-directory: ./terraform
         run: terraform fmt -check -recursive
 
       - name: Terraform Init
-        working-directory: ./widget-sdk/terraform
+        working-directory: ./terraform
         run: terraform init -backend=false
 
       - name: Terraform Validate
-        working-directory: ./widget-sdk/terraform
+        working-directory: ./terraform
         run: terraform validate
 
