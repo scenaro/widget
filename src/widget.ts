@@ -32,18 +32,42 @@ class ScenaroWidget {
     for (let i = 0; i < scripts.length; i++) {
       const script = scripts[i];
       // Support both data-scenaro-id and data-scenaro-uuid (as per new spec)
-      if (script.dataset.scenaroUuid) {
+      if (script.dataset.scenaroUuid && script.dataset.scenaroUuid !== '') {
         scenaroId = script.dataset.scenaroUuid;
         break;
       }
-      if (script.dataset.scenaroId) {
+      if (script.dataset.scenaroId && script.dataset.scenaroId !== '') {
         scenaroId = script.dataset.scenaroId;
         break;
       }
     }
 
+    // If still not found, check multiple times (for async script loading scenarios)
     if (!scenaroId) {
-      console.warn('[Scenaro] No data-scenaro-uuid or data-scenaro-id found on script tag.');
+      const widgetScript = document.getElementById('scenaro-widget-script');
+      if (widgetScript) {
+        // Check immediately (module script may have already set it)
+        if (widgetScript.dataset.scenaroUuid && widgetScript.dataset.scenaroUuid !== '') {
+          scenaroId = widgetScript.dataset.scenaroUuid;
+        } else {
+          // Wait a bit for module script to set the attribute
+          let attempts = 0;
+          const maxAttempts = 20; // 2 seconds total (20 * 100ms)
+          const checkInterval = setInterval(() => {
+            attempts++;
+            if (widgetScript.dataset.scenaroUuid && widgetScript.dataset.scenaroUuid !== '') {
+              this.config.scenaroId = widgetScript.dataset.scenaroUuid;
+              console.log('[Scenaro] Scenario UUID detected after delay:', this.config.scenaroId);
+              clearInterval(checkInterval);
+            } else if (attempts >= maxAttempts) {
+              console.warn('[Scenaro] No data-scenaro-uuid found after waiting. Please ensure the attribute is set on the script tag.');
+              clearInterval(checkInterval);
+            }
+          }, 100);
+        }
+      } else {
+        console.warn('[Scenaro] No script tag with id "scenaro-widget-script" found.');
+      }
     }
 
     return {
