@@ -31,6 +31,7 @@ export interface Connector {
 export interface Engine {
   name: string;
   initialize(config: ScenaroConfig): Promise<void>;
+  setIframe(iframe: HTMLIFrameElement): void;
   connect(): Promise<void>;
   onEnd(): Promise<void>;
 }

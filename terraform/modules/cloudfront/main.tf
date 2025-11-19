@@ -147,13 +147,19 @@ resource "aws_cloudfront_response_headers_policy" "main" {
     content_type_options {
       override = true
     }
-    frame_options {
-      frame_option = "SAMEORIGIN"
-      override     = true
-    }
+    # Remove X-Frame-Options to allow iframe embedding
+    # Use Content-Security-Policy instead (see custom_headers_config below)
     referrer_policy {
       referrer_policy = "strict-origin-when-cross-origin"
       override        = true
+    }
+  }
+
+  custom_headers_config {
+    items {
+      header   = "Content-Security-Policy"
+      value    = "frame-ancestors *;"
+      override = true
     }
   }
 
