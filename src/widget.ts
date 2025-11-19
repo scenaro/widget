@@ -2,7 +2,7 @@ import { ScenaroConfig, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 // import { CommerceEngine } from './engines/commerce';
 
 interface WidgetConfig {
-  iframeUrl?: string;
+  iframe_url?: string; // Snake case to match API response
   engine?: string;
   connector?: string; // Internal connector name (e.g., "magento", "shopify")
 }
@@ -24,24 +24,24 @@ class ScenaroWidget {
   private detectConfig(): ScenaroConfig {
     // Find the script tag that loaded this widget
     const scripts = document.getElementsByTagName('script');
-    let scenaroId = '';
+    let scenarioUuid = '';
     
     for (let i = 0; i < scripts.length; i++) {
       const script = scripts[i];
       // Only support data-scenaro-uuid (legacy data-scenaro-id removed)
       if (script.dataset.scenaroUuid && script.dataset.scenaroUuid !== '') {
-        scenaroId = script.dataset.scenaroUuid;
+        scenarioUuid = script.dataset.scenaroUuid;
         break;
       }
     }
 
     // If still not found, check multiple times (for async script loading scenarios)
-    if (!scenaroId) {
+    if (!scenarioUuid) {
       const widgetScript = document.getElementById('scenaro-widget-script');
       if (widgetScript) {
         // Check immediately (module script may have already set it)
         if (widgetScript.dataset.scenaroUuid && widgetScript.dataset.scenaroUuid !== '') {
-          scenaroId = widgetScript.dataset.scenaroUuid;
+          scenarioUuid = widgetScript.dataset.scenaroUuid;
         } else {
           // Wait a bit for module script to set the attribute
           let attempts = 0;
@@ -49,8 +49,8 @@ class ScenaroWidget {
           const checkInterval = setInterval(() => {
             attempts++;
             if (widgetScript.dataset.scenaroUuid && widgetScript.dataset.scenaroUuid !== '') {
-              this.config.scenaroId = widgetScript.dataset.scenaroUuid;
-              console.log('[Scenaro] Scenario UUID detected after delay:', this.config.scenaroId);
+              this.config.scenarioUuid = widgetScript.dataset.scenaroUuid;
+              console.log('[Scenaro] Scenario UUID detected after delay:', this.config.scenarioUuid);
               clearInterval(checkInterval);
             } else if (attempts >= maxAttempts) {
               console.warn('[Scenaro] No data-scenaro-uuid found after waiting. Please ensure the data-scenaro-uuid attribute is set on the script tag.');
@@ -64,7 +64,7 @@ class ScenaroWidget {
     }
 
     return {
-      scenaroId,
+      scenarioUuid,
       iframeUrl: 'https://cdn.scenaro.io/runtime/index.html', // Default, will be overridden by API
     };
   }
@@ -80,7 +80,15 @@ class ScenaroWidget {
       }
       
       const scenario = await response.json();
-      return scenario.public?.widget_config || {};
+      // Extract widget_config from API response (snake_case format)
+      const widgetConfig = scenario.public?.widget_config || {};
+      
+      // Return with snake_case field names to match API
+      return {
+        iframe_url: widgetConfig.iframe_url,
+        engine: widgetConfig.engine,
+        connector: widgetConfig.connector,
+      };
     } catch (error) {
       console.error('[Scenaro] Error fetching scenario config:', error);
       return {};
@@ -104,11 +112,11 @@ class ScenaroWidget {
     
     // Re-check for scenario UUID after a short delay (in case it's set by a module script)
     setTimeout(() => {
-      if (!this.config.scenaroId) {
+      if (!this.config.scenarioUuid) {
         const widgetScript = document.getElementById('scenaro-widget-script');
         if (widgetScript && widgetScript.dataset.scenaroUuid && widgetScript.dataset.scenaroUuid !== '') {
-          this.config.scenaroId = widgetScript.dataset.scenaroUuid;
-          console.log('[Scenaro] Scenario UUID detected:', this.config.scenaroId);
+          this.config.scenarioUuid = widgetScript.dataset.scenaroUuid;
+          console.log('[Scenaro] Scenario UUID detected:', this.config.scenarioUuid);
         }
       }
     }, 100);
@@ -121,9 +129,9 @@ class ScenaroWidget {
     this.emit('open');
 
     // Fetch scenario config if we have a scenario UUID
-    if (this.config.scenaroId) {
+    if (this.config.scenarioUuid) {
       try {
-        this.widgetConfig = await this.fetchScenarioConfig(this.config.scenaroId);
+        this.widgetConfig = await this.fetchScenarioConfig(this.config.scenarioUuid);
         console.log('[Scenaro] Fetched widget config:', this.widgetConfig);
       } catch (e) {
         console.warn('[Scenaro] Failed to fetch widget config, using defaults');
@@ -174,26 +182,34 @@ class ScenaroWidget {
     const iframe = document.createElement('iframe');
     iframe.id = 'scenaro-iframe';
     
-    // Use iframeUrl from widget config, fallback to default
-    let iframeUrl = this.widgetConfig?.iframeUrl || this.config.iframeUrl || 'https://cdn.scenaro.io/runtime/index.html';
+    // Use iframe_url from widget config (snake_case from API), fallback to default
+    let iframeUrl = this.widgetConfig?.iframe_url || this.config.iframeUrl || 'https://cdn.scenaro.io/runtime/index.html';
     
-    // Ensure the URL is complete (not just a domain)
-    if (!iframeUrl || iframeUrl === 'https://cdn.scenaro.io' || iframeUrl === 'https://cdn.scenaro.io/') {
-      // Default to runtime path
+    // URL normalization: only modify incomplete CDN URLs
+    // If the URL is a complete URL (has protocol, domain, and either a path or port), use it as-is
+    if (iframeUrl && iframeUrl.includes('://')) {
+      try {
+        const urlObj = new URL(iframeUrl);
+        // If URL has a path (not just root) or a port, use it as-is
+        // Otherwise, it's likely just a domain like "https://cdn.scenaro.io"
+        if (urlObj.pathname !== '/' || urlObj.port !== '') {
+          // Complete URL with path or port - use as-is
+        } else if (iframeUrl === 'https://cdn.scenaro.io' || iframeUrl === 'https://cdn.scenaro.io/') {
+          // Incomplete CDN URL - append default path
+          iframeUrl = 'https://cdn.scenaro.io/runtime/index.html';
+        }
+      } catch (e) {
+        // Invalid URL format, use default
+        iframeUrl = 'https://cdn.scenaro.io/runtime/index.html';
+      }
+    } else {
+      // No protocol, use default
       iframeUrl = 'https://cdn.scenaro.io/runtime/index.html';
-    } else if (iframeUrl.endsWith('/')) {
-      iframeUrl = `${iframeUrl}runtime/index.html`;
-    } else if (iframeUrl && !iframeUrl.includes('/') && iframeUrl.startsWith('http')) {
-      // If it's just a domain without path, append the default path
-      iframeUrl = `${iframeUrl}/runtime/index.html`;
-    } else if (iframeUrl && !iframeUrl.includes('/runtime/') && !iframeUrl.includes('/index.html') && !iframeUrl.includes('demo.scenaro.io')) {
-      // If it doesn't have a path and isn't the demo domain, append default path
-      iframeUrl = `${iframeUrl}/runtime/index.html`;
     }
     
     // Construct URL with params
     const url = new URL(iframeUrl);
-    url.searchParams.append('scenario', this.config.scenaroId);
+    url.searchParams.append('scenario', this.config.scenarioUuid);
     
     if (openConfig) {
         if (openConfig.entrypoint) url.searchParams.append('entrypoint', openConfig.entrypoint);
@@ -234,8 +250,8 @@ class ScenaroWidget {
   }
 
   private async loadEngine() {
-      if (!this.config.scenaroId) {
-          console.warn('[Scenaro] No scenario ID available, cannot load engine');
+      if (!this.config.scenarioUuid) {
+          console.warn('[Scenaro] No scenario UUID available, cannot load engine');
           return;
       }
 
