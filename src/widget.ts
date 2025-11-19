@@ -28,13 +28,9 @@ class ScenaroWidget {
     
     for (let i = 0; i < scripts.length; i++) {
       const script = scripts[i];
-      // Support both data-scenaro-id and data-scenaro-uuid (as per new spec)
+      // Only support data-scenaro-uuid (legacy data-scenaro-id removed)
       if (script.dataset.scenaroUuid && script.dataset.scenaroUuid !== '') {
         scenaroId = script.dataset.scenaroUuid;
-        break;
-      }
-      if (script.dataset.scenaroId && script.dataset.scenaroId !== '') {
-        scenaroId = script.dataset.scenaroId;
         break;
       }
     }
@@ -57,7 +53,7 @@ class ScenaroWidget {
               console.log('[Scenaro] Scenario UUID detected after delay:', this.config.scenaroId);
               clearInterval(checkInterval);
             } else if (attempts >= maxAttempts) {
-              console.warn('[Scenaro] No data-scenaro-uuid found after waiting. Please ensure the attribute is set on the script tag.');
+              console.warn('[Scenaro] No data-scenaro-uuid found after waiting. Please ensure the data-scenaro-uuid attribute is set on the script tag.');
               clearInterval(checkInterval);
             }
           }, 100);
@@ -109,14 +105,10 @@ class ScenaroWidget {
     // Re-check for scenario UUID after a short delay (in case it's set by a module script)
     setTimeout(() => {
       if (!this.config.scenaroId) {
-        const scripts = document.getElementsByTagName('script');
-        for (let i = 0; i < scripts.length; i++) {
-          const script = scripts[i];
-          if (script.dataset.scenaroUuid) {
-            this.config.scenaroId = script.dataset.scenaroUuid;
-            console.log('[Scenaro] Scenario UUID detected:', this.config.scenaroId);
-            break;
-          }
+        const widgetScript = document.getElementById('scenaro-widget-script');
+        if (widgetScript && widgetScript.dataset.scenaroUuid && widgetScript.dataset.scenaroUuid !== '') {
+          this.config.scenaroId = widgetScript.dataset.scenaroUuid;
+          console.log('[Scenaro] Scenario UUID detected:', this.config.scenaroId);
         }
       }
     }, 100);
