@@ -147,17 +147,13 @@ resource "aws_cloudfront_response_headers_policy" "main" {
     content_type_options {
       override = true
     }
+    content_security_policy {
+      content_security_policy = "frame-ancestors *;"
+      override                = true
+    }
     referrer_policy {
       referrer_policy = "strict-origin-when-cross-origin"
       override        = true
-    }
-  }
-
-  custom_headers_config {
-    items {
-      header = "Content-Security-Policy"
-      value  = "frame-ancestors *;"
-      override = true
     }
   }
 
