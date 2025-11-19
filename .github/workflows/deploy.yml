@@ -2,9 +2,18 @@ name: Deploy Widget SDK
 
 on:
   push:
-    branches: [ "production" ]
+    branches: [production]
     paths:
       - 'widget-sdk/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
@@ -31,11 +40,6 @@ jobs:
       - name: Build
         working-directory: ./widget-sdk
         run: npm run build
-
-      - name: Test
-        working-directory: ./widget-sdk
-        run: npm run test || echo "Tests skipped if not configured"
-        continue-on-error: true
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -67,7 +71,7 @@ jobs:
             echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
             echo "✓ Found CloudFront Distribution ID from Terraform: $DIST_ID"
           else
-            # Fallback: Query AWS directly by domain alias
+            # Fallback: Query AWS directly by domain name
             echo "Terraform output not available, querying AWS..."
             DIST_ID=$(aws cloudfront list-distributions \
               --query "DistributionList.Items[?Aliases.Items[?contains(@, 'cdn.scenaro.io')]].Id" \
@@ -104,3 +108,4 @@ jobs:
             --distribution-id ${{ steps.get-cf-id.outputs.distribution_id }} \
             --paths "/*"
         continue-on-error: true
+

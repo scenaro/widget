@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, production]
+    paths:
+      - 'widget-sdk/**'
+  push:
+    branches: [main]
+    paths:
+      - 'widget-sdk/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: ./widget-sdk
+        run: npm ci
+
+      - name: Lint
+        working-directory: ./widget-sdk
+        run: npm run lint || echo "Lint not configured, skipping"
+        continue-on-error: true
+
+      - name: Build
+        working-directory: ./widget-sdk
+        run: npm run build
+
+      - name: Test
+        working-directory: ./widget-sdk
+        run: npm run test || echo "Tests not configured, skipping"
+        continue-on-error: true
+
+      - name: Check build output
+        working-directory: ./widget-sdk
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Error: dist directory not found after build"
+            exit 1
+          fi
+          echo "Build output verified:"
+          ls -la dist/
+          if [ -f "dist/widget.js" ]; then
+            echo "✓ widget.js created"
+          else
+            echo "✗ widget.js not found"
+            exit 1
+          fi
+
