@@ -1,20 +1,24 @@
 import { ScenaroConfig, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 // import { CommerceEngine } from './engines/commerce';
 
-// Placeholder for where we might load engines dynamically in the future
-// For this MVP, we are bundling the commerce engine directly to show it works,
-// or we can leave it to be loaded separately. 
-// Given the requirements, let's implement the Loader logic.
+interface WidgetConfig {
+  iframeUrl?: string;
+  engine?: string;
+  connector?: string; // Internal connector name (e.g., "magento", "shopify")
+}
 
 class ScenaroWidget {
   private config: ScenaroConfig;
   private iframe: HTMLIFrameElement | null = null;
   private engine: any = null; // Typed as any because it might be loaded dynamically
   private listeners: Map<string, Function[]> = new Map();
+  private widgetConfig: WidgetConfig | null = null;
 
   constructor() {
     this.config = this.detectConfig();
     this.init();
+    // Mark as initialized
+    (window as any).Scenaro._initialized = true;
   }
 
   private detectConfig(): ScenaroConfig {
@@ -41,31 +45,72 @@ class ScenaroWidget {
 
     return {
       scenaroId,
-      iframeUrl: 'https://cdn.scenaro.io/runtime/index.html', // Default
+      iframeUrl: 'https://cdn.scenaro.io/runtime/index.html', // Default, will be overridden by API
     };
+  }
+
+  private async fetchScenarioConfig(scenarioUUID: string): Promise<WidgetConfig> {
+    try {
+      const apiUrl = (window as any).SCENARO_API_URL || 'https://localhost:8080';
+      const response = await fetch(`${apiUrl}/v1/public/scenarios/${scenarioUUID}`);
+      
+      if (!response.ok) {
+        console.warn(`[Scenaro] Failed to fetch scenario config: ${response.statusText}`);
+        return {};
+      }
+      
+      const scenario = await response.json();
+      return scenario.public?.widget_config || {};
+    } catch (error) {
+      console.error('[Scenaro] Error fetching scenario config:', error);
+      return {};
+    }
   }
 
   private init() {
     // Expose global API
-    (window as any).Scenaro = {
+    const api = {
       open: this.open.bind(this),
       close: this.close.bind(this),
       on: this.on.bind(this),
       off: this.off.bind(this),
+      _initialized: true,
+      _instance: this,
     };
+    (window as any).Scenaro = api;
 
     // Listen for messages from Iframe
     window.addEventListener('message', this.handleMessage.bind(this));
+    
+    // Re-check for scenario UUID after a short delay (in case it's set by a module script)
+    setTimeout(() => {
+      if (!this.config.scenaroId) {
+        const scripts = document.getElementsByTagName('script');
+        for (let i = 0; i < scripts.length; i++) {
+          const script = scripts[i];
+          if (script.dataset.scenaroUuid) {
+            this.config.scenaroId = script.dataset.scenaroUuid;
+            console.log('[Scenaro] Scenario UUID detected:', this.config.scenaroId);
+            break;
+          }
+        }
+      }
+    }, 100);
   }
 
-  public open(config?: ScenaroOpenConfig) {
+  public async open(config?: ScenaroOpenConfig) {
     if (this.iframe) return; // Already open
 
     // Emit 'open' event
     this.emit('open');
 
-    this.createIframe(config);
-    this.loadEngine();
+    // Fetch scenario config if we have a scenario UUID
+    if (this.config.scenaroId) {
+      this.widgetConfig = await this.fetchScenarioConfig(this.config.scenaroId);
+    }
+
+    await this.createIframe(config);
+    await this.loadEngine();
   }
 
   public close() {
@@ -104,12 +149,29 @@ class ScenaroWidget {
       }
   }
 
-  private createIframe(openConfig?: ScenaroOpenConfig) {
+  private async createIframe(openConfig?: ScenaroOpenConfig) {
     const iframe = document.createElement('iframe');
     iframe.id = 'scenaro-iframe';
     
+    // Use iframeUrl from widget config, fallback to default
+    let iframeUrl = this.widgetConfig?.iframeUrl || this.config.iframeUrl || 'https://cdn.scenaro.io/runtime/index.html';
+    
+    // Ensure the URL is complete (not just a domain)
+    if (!iframeUrl || iframeUrl === 'https://cdn.scenaro.io' || iframeUrl === 'https://cdn.scenaro.io/') {
+      // Default to runtime path
+      iframeUrl = 'https://cdn.scenaro.io/runtime/index.html';
+    } else if (iframeUrl.endsWith('/')) {
+      iframeUrl = `${iframeUrl}runtime/index.html`;
+    } else if (iframeUrl && !iframeUrl.includes('/') && iframeUrl.startsWith('http')) {
+      // If it's just a domain without path, append the default path
+      iframeUrl = `${iframeUrl}/runtime/index.html`;
+    } else if (iframeUrl && !iframeUrl.includes('/runtime/') && !iframeUrl.includes('/index.html') && !iframeUrl.includes('demo.scenaro.io')) {
+      // If it doesn't have a path and isn't the demo domain, append default path
+      iframeUrl = `${iframeUrl}/runtime/index.html`;
+    }
+    
     // Construct URL with params
-    const url = new URL(this.config.iframeUrl || 'https://cdn.scenaro.io/runtime/index.html');
+    const url = new URL(iframeUrl);
     url.searchParams.append('scenario', this.config.scenaroId);
     
     if (openConfig) {
@@ -151,22 +213,70 @@ class ScenaroWidget {
   }
 
   private async loadEngine() {
-      // In a full implementation, we would fetch the engine URL from the config
-      // or dynamically import it.
-      // For this MVP, we instantiate the CommerceEngine directly if needed.
-      // dynamic import example:
-      // const module = await import('./engines/commerce');
-      // this.engine = new module.CommerceEngine();
-      
-      // Direct usage for MVP demo:
-      const { CommerceEngine } = await import('./engines/commerce');
-      this.engine = new CommerceEngine();
-      
-      if (this.iframe) {
-          this.engine.setIframe(this.iframe);
+      if (!this.config.scenaroId) {
+          console.warn('[Scenaro] No scenario ID available, cannot load engine');
+          return;
       }
+
+      // Get engine name from widget config, default to 'commerce'
+      const engineName = this.widgetConfig?.engine || 'commerce';
       
-      await this.engine.initialize(this.config);
+      try {
+          // Determine CDN base URL from current script location or use default
+          const cdnBaseUrl = this.getCDNBaseUrl();
+          
+          // Load engine from CDN using absolute URL
+          const engineUrl = `${cdnBaseUrl}/engines/${engineName}.js`;
+          const engineModule = await import(engineUrl);
+          const EngineClass = engineModule[`${engineName.charAt(0).toUpperCase() + engineName.slice(1)}Engine`];
+          
+          if (!EngineClass) {
+              console.error(`[Scenaro] Engine class not found: ${engineName}`);
+              return;
+          }
+          
+          this.engine = new EngineClass();
+          
+          // Load connector if specified
+          if (this.widgetConfig?.connector) {
+              try {
+                  const connectorUrl = `${cdnBaseUrl}/connectors/${this.widgetConfig.connector}.js`;
+                  await import(connectorUrl);
+                  // Connectors are typically used by engines, so we pass them during engine initialization
+                  // The engine will handle connector setup
+                  console.log(`[Scenaro] Loaded connector: ${this.widgetConfig.connector}`);
+              } catch (error) {
+                  console.warn(`[Scenaro] Failed to load connector ${this.widgetConfig.connector}:`, error);
+              }
+          }
+          
+          if (this.iframe) {
+              this.engine.setIframe(this.iframe);
+          }
+          
+          await this.engine.initialize(this.config);
+      } catch (error) {
+          console.error(`[Scenaro] Failed to load engine ${engineName}:`, error);
+      }
+  }
+
+  private getCDNBaseUrl(): string {
+      // Try to detect CDN URL from the script tag that loaded the widget
+      const scripts = document.getElementsByTagName('script');
+      for (let i = 0; i < scripts.length; i++) {
+          const script = scripts[i];
+          if (script.src && (script.src.includes('widget.js') || script.src.includes('widget.cjs'))) {
+              // Extract base URL from script src (e.g., https://cdn.scenaro.io/widget.js -> https://cdn.scenaro.io)
+              try {
+                  const url = new URL(script.src);
+                  return `${url.protocol}//${url.host}`;
+              } catch (e) {
+                  // Fallback to default
+              }
+          }
+      }
+      // Default fallback
+      return 'https://cdn.scenaro.io';
   }
 
   private handleMessage(event: MessageEvent) {
