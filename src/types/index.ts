@@ -1,14 +1,10 @@
-export interface ScenaroConfig {
-  scenarioUuid: string;
-  scenarioUrl?: string;
-  engineUrl?: string;
-  iframeUrl?: string;
+export interface PublicationConfig {
+  iframe_url: string;
+  engine: string;
+  connector?: string;
 }
 
 export interface ScenaroOpenConfig {
-  entrypoint?: string;
-  productId?: string;
-  theme?: string;
   metadata?: Record<string, any>;
 }
 
@@ -30,7 +26,7 @@ export interface Connector {
 
 export interface Engine {
   name: string;
-  initialize(config: ScenaroConfig): Promise<void>;
+  initialize(publicationId: string): Promise<void>;
   setIframe(iframe: HTMLIFrameElement): void;
   connect(): Promise<void>;
   onEnd(): Promise<void>;
