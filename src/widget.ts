@@ -27,35 +27,6 @@ class ScenaroWidget {
         break;
       }
     }
-
-<<<<<<< HEAD
-    // If still not found, check multiple times (for async script loading scenarios)
-    if (!scenarioUuid) {
-      const widgetScript = document.getElementById('scenaro-widget-script');
-      if (widgetScript) {
-        // Check immediately (module script may have already set it)
-        if (widgetScript.dataset.scenaroUuid && widgetScript.dataset.scenaroUuid !== '') {
-          scenarioUuid = widgetScript.dataset.scenaroUuid;
-        } else {
-          // Wait a bit for module script to set the attribute
-          let attempts = 0;
-          const maxAttempts = 20; // 2 seconds total (20 * 100ms)
-          const checkInterval = setInterval(() => {
-            attempts++;
-            if (widgetScript.dataset.scenaroUuid && widgetScript.dataset.scenaroUuid !== '') {
-              this.config.scenarioUuid = widgetScript.dataset.scenaroUuid;
-              console.log('[Scenaro] Scenario UUID detected after delay:', this.config.scenarioUuid);
-              clearInterval(checkInterval);
-            } else if (attempts >= maxAttempts) {
-              console.warn('[Scenaro] No data-scenaro-uuid found after waiting. Please ensure the attribute is set on the script tag.');
-              clearInterval(checkInterval);
-            }
-          }, 100);
-        }
-      } else {
-        console.warn('[Scenaro] No script tag with id "scenaro-widget-script" found.');
-      }
-=======
     if (!publicationId) {
       console.warn('[Scenaro] No data-publication-id found. Please ensure the data-publication-id attribute is set on the script tag.');
     }
