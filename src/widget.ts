@@ -80,14 +80,14 @@ class ScenaroWidget {
       }
       
       const scenario = await response.json();
-      // Extract widget_config from API response (snake_case format)
-      const widgetConfig = scenario.public?.widget_config || {};
+      // Extract widget config fields directly from public data (flattened structure)
+      const publicData = scenario.public || {};
       
       // Return with snake_case field names to match API
       return {
-        iframe_url: widgetConfig.iframe_url,
-        engine: widgetConfig.engine,
-        connector: widgetConfig.connector,
+        iframe_url: publicData.iframe_url,
+        engine: publicData.engine,
+        connector: publicData.connector,
       };
     } catch (error) {
       console.error('[Scenaro] Error fetching scenario config:', error);
