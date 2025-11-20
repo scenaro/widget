@@ -1,4 +1,4 @@
-import { PublicationConfig, ScenaroEventPayload } from './types';
+import { PublicationConfig, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 
 class ScenaroWidget {
   private publicationId: string;
@@ -6,6 +6,7 @@ class ScenaroWidget {
   private engine: any = null; // Typed as any because it might be loaded dynamically
   private listeners: Map<string, Function[]> = new Map();
   private publicationConfig: PublicationConfig | null = null;
+  private metadata: Record<string, any> = {};
 
   constructor() {
     this.publicationId = this.detectConfig();
@@ -36,7 +37,7 @@ class ScenaroWidget {
 
   private async fetchPublicationConfig(publicationId: string): Promise<PublicationConfig | null> {
     try {
-      const apiUrl = (window as any).SCENARO_API_URL;
+      const apiUrl = (window as any).SCENARO_API_URL || 'https://api.scenaro.io';
       const response = await fetch(`${apiUrl}/v1/public/publications/${publicationId}`);
       
       if (!response.ok) {
@@ -60,14 +61,25 @@ class ScenaroWidget {
       close: this.close.bind(this),
       on: this.on.bind(this),
       off: this.off.bind(this),
+      updateMetadata: this.updateMetadata.bind(this),
     };
 
     // Listen for messages from Iframe
     window.addEventListener('message', this.handleMessage.bind(this));
+    
+    // Listen for language changes
+    window.addEventListener('languageChanged', () => {
+      this.handleLanguageChange();
+    });
   }
 
-  public async open() {
+  public async open(config?: ScenaroOpenConfig) {
     if (this.iframe) return; // Already open
+
+    // Store metadata if provided
+    if (config?.metadata) {
+      this.metadata = { ...this.metadata, ...config.metadata };
+    }
 
     // Emit 'open' event
     this.emit('open');
@@ -229,6 +241,8 @@ class ScenaroWidget {
           case 'SCENARO_READY':
               console.log('[Scenaro] Iframe is ready');
               this.emit('ready');
+              // Send metadata to iframe when it's ready
+              this.sendMetadataToIframe();
               if (this.engine) {
                   this.engine.connect();
               }
@@ -241,6 +255,34 @@ class ScenaroWidget {
               this.close();
               break;
       }
+  }
+
+  private sendMetadataToIframe() {
+    if (this.iframe && Object.keys(this.metadata).length > 0) {
+      this.iframe.contentWindow?.postMessage({
+        type: 'SCENARO_METADATA',
+        metadata: this.metadata
+      }, '*');
+      console.log('[Scenaro] Sent metadata to iframe:', this.metadata);
+    }
+  }
+
+  public updateMetadata(metadata: Record<string, any>) {
+    this.metadata = { ...this.metadata, ...metadata };
+    // Send updated metadata to iframe if it's already open
+    if (this.iframe) {
+      this.sendMetadataToIframe();
+    }
+  }
+
+  private handleLanguageChange() {
+    // Get current language from localStorage or detect from browser
+    const savedLanguage = localStorage.getItem('preferredLanguage');
+    const browserLang = navigator.language || (navigator as any).userLanguage;
+    const language = savedLanguage || (browserLang.startsWith('fr') ? 'fr' : 'en');
+    
+    // Update metadata with language
+    this.updateMetadata({ language });
   }
 }
 
