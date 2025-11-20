@@ -46,6 +46,6 @@ export default defineConfig({
         return `${entryName}.${ext}`;
       }
     }
-  },
+    },
   plugins: [copyRuntime()]
 });

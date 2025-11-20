@@ -1,5 +1,5 @@
-import { Engine, ScenaroConfig, Connector } from '../../types';
 import { MagentoConnector } from '../../connectors/magento';
+import { Connector, Engine } from '../../types';
 
 export class CommerceEngine implements Engine {
   name = 'commerce';
@@ -16,8 +16,8 @@ export class CommerceEngine implements Engine {
     }
   }
 
-  async initialize(config: ScenaroConfig): Promise<void> {
-    console.log('[Scenaro] Commerce Engine Initialized', config);
+  async initialize(publicationId: string): Promise<void> {
+    console.log('[Scenaro] Commerce Engine Initialized', publicationId);
     // Setup listeners or pre-fetch data if needed
   }
 
