@@ -193,8 +193,8 @@ class ScenaroWidget {
       return;
     }
 
-    // Build stable embed URL
-    const baseUrl = `https://embed.scenaro.io/v1/public/scenarios/${this.publicationId}/embed`;
+    // Build stable embed URL (CloudFront rewrites /{uuid} to API path)
+    const baseUrl = `https://embed.scenaro.io/${this.publicationId}`;
     const url = new URL(baseUrl);
 
     // Add language from metadata if available
