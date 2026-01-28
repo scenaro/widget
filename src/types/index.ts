@@ -8,15 +8,17 @@ export interface ScenaroOpenConfig {
   metadata?: Record<string, any>;
 }
 
-export type ScenaroEventType = 
-  | 'SCENARO_READY' 
+export type ScenaroEventType =
+  | 'SCENARO_READY'
   | 'SCENARO_END'
   | 'SCENARO_CART_LIST_REQUEST'
   | 'SCENARO_CART_ADD_REQUEST'
   | 'SCENARO_CART_UPDATE_REQUEST'
   | 'SCENARO_CART_REMOVE_REQUEST'
   | 'SCENARO_CART_CLEAR_REQUEST'
-  | 'SCENARO_CART_RESPONSE';
+  | 'SCENARO_CART_RESPONSE'
+  | 'SCENARO_CAPABILITY_REQUEST'
+  | 'SCENARO_CAPABILITY_RESPONSE';
 
 export interface ScenaroEventPayload<T = any> {
   type: ScenaroEventType;
@@ -66,6 +68,19 @@ export interface CartResponse {
   success: boolean;
   data?: any;
   error?: string;
+}
+
+export interface CapabilityRequest {
+  type: 'SCENARO_CAPABILITY_REQUEST';
+  requestId: string;
+  capabilities: string[];
+  adapter?: string;
+}
+
+export interface CapabilityResponse {
+  type: 'SCENARO_CAPABILITY_RESPONSE';
+  requestId: string;
+  capabilities: Record<string, boolean>;
 }
 
 export type CartRequest = CartListRequest | CartAddRequest | CartUpdateRequest | CartRemoveRequest | CartClearRequest;

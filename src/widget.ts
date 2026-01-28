@@ -1,11 +1,10 @@
-import { CartRequest, PublicationConfig, ScenaroEventPayload, ScenaroOpenConfig } from './types';
+import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 
 class ScenaroWidget {
   private publicationId: string;
   private iframe: HTMLIFrameElement | null = null;
   private engine: any = null; // Typed as any because it might be loaded dynamically
   private listeners: Map<string, Function[]> = new Map();
-  private publicationConfig: PublicationConfig | null = null;
   private metadata: Record<string, any> = {};
 
   constructor() {
@@ -35,24 +34,6 @@ class ScenaroWidget {
     return publicationId;
   }
 
-  private async fetchPublicationConfig(publicationId: string): Promise<PublicationConfig | null> {
-    try {
-      const apiUrl = (window as any).SCENARO_API_URL || 'https://api.scenaro.io';
-      const response = await fetch(`${apiUrl}/v1/public/publications/${publicationId}`);
-      
-      if (!response.ok) {
-        console.warn(`[Scenaro] Failed to fetch publication config: ${response.statusText}`);
-        return null;
-      }
-      
-      const publication = await response.json();
-
-      return publication.configuration;
-    } catch (error) {
-      console.error('[Scenaro] Error fetching publication config:', error);
-      return null;
-    }
-  }
 
   private init() {
     // Expose global API
@@ -83,16 +64,6 @@ class ScenaroWidget {
 
     // Emit 'open' event
     this.emit('open');
-
-    // Fetch publication config if we have a publication ID
-    if (this.publicationId) {
-      try {
-        this.publicationConfig = await this.fetchPublicationConfig(this.publicationId);
-        console.log('[Scenaro] Fetched publication config:', this.publicationConfig);
-      } catch (e) {
-        console.warn('[Scenaro] Failed to fetch publication config, using defaults');
-      }
-    }
 
     await this.createIframe();
     await this.loadEngine();
@@ -134,18 +105,102 @@ class ScenaroWidget {
       }
   }
 
+  private detectCMS(): string | null {
+    // Simple CMS detection - can be extended later
+    if (typeof window !== 'undefined' && (window as any).requirejs) {
+      // Very rough heuristic for Magento 2
+      return 'magento';
+    }
+    return null;
+  }
+
+  private async loadAdapter(adapterName: string): Promise<void> {
+    if (!this.publicationId) {
+      console.warn('[Scenaro] No publication ID available, cannot load adapter');
+      return;
+    }
+
+    const cdnBaseUrl = this.getCDNBaseUrl();
+    const engineName = 'commerce'; // Default to commerce for now
+
+    try {
+      // Load connector
+      const connectorUrl = `${cdnBaseUrl}/connectors/${adapterName}.js`;
+      await import(connectorUrl);
+      console.log(`[Scenaro] Loaded connector: ${adapterName}`);
+
+      // Load engine
+      const engineUrl = `${cdnBaseUrl}/engines/${engineName}.js`;
+      const engineModule = await import(engineUrl);
+      const EngineClass = engineModule[`${engineName.charAt(0).toUpperCase() + engineName.slice(1)}Engine`];
+
+      if (!EngineClass) {
+        console.error(`[Scenaro] Engine class not found: ${engineName}`);
+        return;
+      }
+
+      this.engine = new EngineClass();
+
+      if (this.iframe) {
+        this.engine.setIframe(this.iframe);
+      }
+
+      await this.engine.initialize(this.publicationId);
+    } catch (error) {
+      console.error(`[Scenaro] Failed to load adapter ${adapterName}:`, error);
+    }
+  }
+
+  private async handleCapabilityRequest(payload: CapabilityRequest): Promise<void> {
+    // Resolve adapter: use payload.adapter hint or detect CMS
+    const adapter = payload.adapter || this.detectCMS();
+
+    const capabilities: Record<string, boolean> = {};
+
+    // For each requested capability, try to load and mark as available
+    for (const capability of payload.capabilities) {
+      if (capability === 'cart' && adapter) {
+        try {
+          await this.loadAdapter(adapter);
+          capabilities.cart = true;
+        } catch (error) {
+          console.warn(`[Scenaro] Failed to load cart capability with adapter ${adapter}:`, error);
+          capabilities.cart = false;
+        }
+      } else {
+        capabilities[capability] = false; // Unknown capability or no adapter
+      }
+    }
+
+    // Send response to iframe
+    const response: CapabilityResponse = {
+      type: 'SCENARO_CAPABILITY_RESPONSE',
+      requestId: payload.requestId,
+      capabilities
+    };
+
+    if (this.iframe && this.iframe.contentWindow) {
+      this.iframe.contentWindow.postMessage(response, '*');
+    }
+  }
+
   private async createIframe() {
     const iframe = document.createElement('iframe');
     iframe.id = 'scenaro-iframe';
 
-    if (!this.publicationConfig) {
-      console.warn('[Scenaro] No publication config available, cannot create iframe');
+    if (!this.publicationId) {
+      console.warn('[Scenaro] No publication ID available, cannot create iframe');
       return;
     }
-    
-    const baseUrl = this.publicationConfig.iframe_url;
+
+    // Build stable embed URL
+    const baseUrl = `https://embed.scenaro.io/v1/public/scenarios/${this.publicationId}/embed`;
     const url = new URL(baseUrl);
-    url.searchParams.append('scenario', this.publicationId);
+
+    // Add language from metadata if available
+    if (this.metadata.language) {
+      url.searchParams.append('language', this.metadata.language);
+    }
 
     iframe.src = url.toString();
     iframe.allow = "microphone; autoplay";
@@ -166,13 +221,13 @@ class ScenaroWidget {
   }
 
   private async loadEngine() {
-      if (!this.publicationId || !this.publicationConfig) {
+      if (!this.publicationId) {
           console.warn('[Scenaro] No publication ID available, cannot load engine');
           return;
       }
 
-      // Get engine name from widget config, default to 'commerce'
-      const engineName = this.publicationConfig.engine;
+      // Default to 'commerce' engine
+      const engineName = 'commerce';
       
       try {
           // Determine CDN base URL from current script location or use default
@@ -190,16 +245,17 @@ class ScenaroWidget {
           
           this.engine = new EngineClass();
           
-          // Load connector if specified
-          if (this.publicationConfig?.connector) {
+          // Load connector based on CMS detection
+          const adapter = this.detectCMS();
+          if (adapter) {
               try {
-                  const connectorUrl = `${cdnBaseUrl}/connectors/${this.publicationConfig.connector}.js`;
+                  const connectorUrl = `${cdnBaseUrl}/connectors/${adapter}.js`;
                   await import(connectorUrl);
                   // Connectors are typically used by engines, so we pass them during engine initialization
                   // The engine will handle connector setup
-                  console.log(`[Scenaro] Loaded connector: ${this.publicationConfig.connector}`);
+                  console.log(`[Scenaro] Loaded connector: ${adapter}`);
               } catch (error) {
-                  console.warn(`[Scenaro] Failed to load connector ${this.publicationConfig.connector}:`, error);
+                  console.warn(`[Scenaro] Failed to load connector ${adapter}:`, error);
               }
           }
           
@@ -236,7 +292,13 @@ class ScenaroWidget {
       // Security check: in production, check event.origin against allowed origins
       
       const payload = event.data as ScenaroEventPayload;
-      
+
+      // Check if this is a capability request
+      if (payload.type === 'SCENARO_CAPABILITY_REQUEST') {
+          this.handleCapabilityRequest(payload as CapabilityRequest);
+          return;
+      }
+
       // Check if this is a cart CRUD request
       const cartRequestTypes = [
           'SCENARO_CART_LIST_REQUEST',
