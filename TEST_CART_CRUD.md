@@ -1,8 +1,20 @@
 # Test Cart CRUD in Magento Browser Console
 
+## Important: Content Security Policy (CSP) Note
+
+⚠️ **If you encounter CSP errors**, the Magento site's Content Security Policy may block loading scripts from `cdn.scenaro.io`. 
+
+**Solutions:**
+1. **If the widget is already loaded on the page** (via a script tag in the HTML), skip the loading step and go directly to testing
+2. **Use browser DevTools** to temporarily disable CSP (Chrome: DevTools → Settings → Disable cache + Network conditions)
+3. **Add the script tag manually** to the page HTML via DevTools Elements panel
+4. **Use a browser extension** that can bypass CSP (for testing only)
+
 ## Test Snippet for Magento Website Console
 
 This snippet loads the Widget SDK from CDN and tests cart CRUD operations via postMessage (simulating iframe communication).
+
+**If CSP blocks the script loading**, the snippet will detect if the widget is already loaded and proceed with testing.
 
 Copy and paste this snippet into the browser console on a Magento website (not in the iframe):
 
@@ -11,33 +23,57 @@ Copy and paste this snippet into the browser console on a Magento website (not i
 (async function() {
   console.log('🧪 Testing Magento Cart CRUD via Widget SDK...\n');
 
-  // Step 1: Load the widget SDK from CDN
+  // Step 1: Load the widget SDK from CDN (or use if already loaded)
   async function loadWidgetSDK() {
-    return new Promise((resolve, reject) => {
-      // Check if already loaded
-      if (window.Scenaro && window.Scenaro._initialized) {
-        console.log('✅ Widget SDK already loaded');
-        resolve();
-        return;
-      }
+    // Check if already loaded
+    if (window.Scenaro && window.Scenaro._initialized) {
+      console.log('✅ Widget SDK already loaded on page');
+      return Promise.resolve();
+    }
 
-      console.log('📦 Loading widget SDK from https://cdn.scenaro.io/widget.js...');
-      const script = document.createElement('script');
-      script.src = 'https://cdn.scenaro.io/widget.js';
-      script.onload = () => {
-        console.log('✅ Widget SDK loaded');
-        // Wait a bit for initialization
-        setTimeout(() => {
-          if (window.Scenaro) {
-            console.log('✅ Widget SDK initialized');
-            resolve();
-          } else {
-            reject(new Error('Widget SDK failed to initialize'));
-          }
-        }, 500);
-      };
-      script.onerror = () => reject(new Error('Failed to load widget SDK from CDN'));
-      document.head.appendChild(script);
+    console.log('📦 Attempting to load widget SDK from https://cdn.scenaro.io/widget.js...');
+    console.log('⚠️  Note: CSP may block this. If it fails, the widget may already be loaded via script tag in the page.');
+    
+    return new Promise((resolve, reject) => {
+      try {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.scenaro.io/widget.js';
+        script.onload = () => {
+          console.log('✅ Widget SDK loaded');
+          setTimeout(() => {
+            if (window.Scenaro) {
+              console.log('✅ Widget SDK initialized');
+              resolve();
+            } else {
+              reject(new Error('Widget SDK failed to initialize'));
+            }
+          }, 500);
+        };
+        script.onerror = () => {
+          console.warn('⚠️  Failed to load widget SDK from CDN (likely CSP blocked)');
+          console.log('💡 Checking if widget is already loaded on the page...');
+          
+          // Check again after a moment (maybe it's loading via another method)
+          setTimeout(() => {
+            if (window.Scenaro && window.Scenaro._initialized) {
+              console.log('✅ Widget SDK found on page (loaded via script tag)');
+              resolve();
+            } else {
+              reject(new Error('Widget SDK not found. CSP may be blocking. Try adding the script tag manually or check if widget is already in page HTML.'));
+            }
+          }, 1000);
+        };
+        document.head.appendChild(script);
+      } catch (error) {
+        console.warn('⚠️  Error creating script tag:', error);
+        // Check if widget is already available
+        if (window.Scenaro && window.Scenaro._initialized) {
+          console.log('✅ Widget SDK found on page');
+          resolve();
+        } else {
+          reject(new Error('CSP blocked script loading. Widget SDK must be loaded via script tag in page HTML.'));
+        }
+      }
     });
   }
 
@@ -263,6 +299,67 @@ Copy and paste this snippet into the browser console on a Magento website (not i
 })();
 ```
 
+## Alternative: Test Without Loading (If Widget Already on Page)
+
+If the widget SDK is already loaded on the page (via a `<script>` tag in the HTML), use this simpler version:
+
+```javascript
+// Test Cart CRUD - Widget already loaded on page
+(function() {
+  if (!window.Scenaro) {
+    console.error('❌ Widget SDK not found. Make sure it\'s loaded on the page.');
+    return;
+  }
+
+  console.log('✅ Widget SDK found, setting up tests...\n');
+
+  const pendingRequests = new Map();
+
+  // Listen for responses
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'SCENARO_CART_RESPONSE') {
+      const { requestId, success, data, error } = e.data;
+      if (pendingRequests.has(requestId)) {
+        pendingRequests.get(requestId).resolve({ success, data, error });
+        pendingRequests.delete(requestId);
+      }
+    }
+  });
+
+  function sendRequest(type, data) {
+    return new Promise((resolve, reject) => {
+      const requestId = `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      pendingRequests.set(requestId, { resolve, reject });
+      const iframe = document.getElementById('scenaro-iframe');
+      if (!iframe?.contentWindow) {
+        reject(new Error('Call Scenaro.open() first'));
+        return;
+      }
+      iframe.contentWindow.postMessage({ type, requestId, ...(data && { data }) }, '*');
+      setTimeout(() => {
+        if (pendingRequests.has(requestId)) {
+          pendingRequests.delete(requestId);
+          reject(new Error('Timeout'));
+        }
+      }, 10000);
+    });
+  }
+
+  window.testCartCRUD = {
+    list: () => sendRequest('SCENARO_CART_LIST_REQUEST').then(r => (console.log('📋 Cart:', r.data), r)),
+    add: (id, qty = 1) => sendRequest('SCENARO_CART_ADD_REQUEST', { productId: id, qty }).then(r => (console.log('➕ Added:', r.data), r)),
+    update: (itemId, qty) => sendRequest('SCENARO_CART_UPDATE_REQUEST', { itemId, qty }).then(r => (console.log('✏️ Updated:', r.data), r)),
+    remove: (itemId) => sendRequest('SCENARO_CART_REMOVE_REQUEST', { itemId }).then(r => (console.log('🗑️ Removed:', r.data), r)),
+    clear: () => sendRequest('SCENARO_CART_CLEAR_REQUEST').then(r => (console.log('🧹 Cleared'), r))
+  };
+
+  console.log('✅ Ready! Use:');
+  console.log('  Scenaro.open()');
+  console.log('  await window.testCartCRUD.list()');
+  console.log('  await window.testCartCRUD.add(productId, qty)');
+})();
+```
+
 ## Simplified Test Approach (Recommended)
 
 Here's a simpler, working approach that loads the SDK and tests via postMessage:
@@ -272,25 +369,46 @@ Here's a simpler, working approach that loads the SDK and tests via postMessage:
 (async function() {
   console.log('🧪 Testing Cart CRUD via Widget SDK...\n');
 
-  // Step 1: Load widget SDK from CDN
+  // Step 1: Load widget SDK from CDN (or use if already loaded)
   if (!window.Scenaro) {
-    console.log('📦 Loading widget SDK from https://cdn.scenaro.io/widget.js...');
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.scenaro.io/widget.js';
-      script.onload = () => {
-        setTimeout(() => {
-          if (window.Scenaro) {
-            console.log('✅ Widget SDK loaded and initialized');
-            resolve();
-          } else {
-            reject(new Error('Widget SDK failed to initialize'));
-          }
-        }, 500);
-      };
-      script.onerror = () => reject(new Error('Failed to load widget SDK'));
-      document.head.appendChild(script);
-    });
+    console.log('📦 Attempting to load widget SDK from https://cdn.scenaro.io/widget.js...');
+    console.log('⚠️  Note: CSP may block this. If it fails, check if widget is already in page HTML.');
+    
+    try {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.scenaro.io/widget.js';
+        script.onload = () => {
+          setTimeout(() => {
+            if (window.Scenaro) {
+              console.log('✅ Widget SDK loaded and initialized');
+              resolve();
+            } else {
+              reject(new Error('Widget SDK failed to initialize'));
+            }
+          }, 500);
+        };
+        script.onerror = () => {
+          console.warn('⚠️  Script load failed (likely CSP blocked)');
+          console.log('💡 Checking if widget is already on page...');
+          setTimeout(() => {
+            if (window.Scenaro) {
+              console.log('✅ Widget SDK found on page');
+              resolve();
+            } else {
+              reject(new Error('CSP blocked. Widget must be loaded via script tag in page HTML.'));
+            }
+          }, 1000);
+        };
+        document.head.appendChild(script);
+      });
+    } catch (error) {
+      if (window.Scenaro) {
+        console.log('✅ Widget SDK found on page (loaded via script tag)');
+      } else {
+        throw error;
+      }
+    }
   } else {
     console.log('✅ Widget SDK already loaded');
   }
@@ -463,7 +581,24 @@ Here's a simpler, working approach that loads the SDK and tests via postMessage:
 ## Notes
 
 - Make sure you're on a Magento website (not in an iframe)
-- The widget SDK is loaded from `https://cdn.scenaro.io/widget.js`
+- **CSP Issues**: If Content Security Policy blocks loading the script, you have options:
+  1. The widget may already be loaded via a `<script>` tag in the page HTML - check the page source
+  2. Use the "Alternative: Test Without Loading" snippet above if widget is already on page
+  3. Temporarily disable CSP in browser DevTools (Chrome: Settings → Disable cache)
+  4. Manually add the script tag to the page HTML via DevTools Elements panel
+- The widget SDK is loaded from `https://cdn.scenaro.io/widget.js` (if not already on page)
 - You need to call `Scenaro.open()` first to create the iframe
 - The test simulates postMessage communication between iframe and parent
 - All operations are async, so use `await` or `.then()` when calling them
+
+## Manual Script Tag Addition (If CSP Blocks)
+
+If CSP blocks the script loading, you can manually add it via DevTools:
+
+1. Open DevTools (F12)
+2. Go to Elements/Inspector tab
+3. Find the `<head>` tag
+4. Right-click → Edit as HTML
+5. Add: `<script src="https://cdn.scenaro.io/widget.js"></script>`
+6. Press Enter to save
+7. Then run the test snippet (it will detect the widget is loaded)
