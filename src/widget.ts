@@ -203,7 +203,7 @@ class ScenaroWidget {
     }
 
     iframe.src = url.toString();
-    iframe.allow = "microphone; autoplay";
+    iframe.allow = "microphone *; autoplay *";
     iframe.style.border = 'none';
     iframe.style.zIndex = '2147483647';
     
