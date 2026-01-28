@@ -72,13 +72,10 @@
             // Notify parent that we are ready
             window.parent.postMessage({ type: 'SCENARO_READY' }, '*');
 
-            // Listen for config or cart data
+            // Listen for config or other messages
             window.addEventListener('message', (event) => {
-                if (event.data.type === 'SCENARO_CART_ID') {
-                    console.log('Runtime received cart ID:', event.data.data.cartId);
-                    // Here we would initialize the actual React/Vue app or Chat interface
-                    document.getElementById('status-text').textContent = 'Connected to store. Starting conversation...';
-                }
+                // Cart operations are now handled via CRUD postMessage requests
+                // No need to receive cart ID separately
             });
         })();
     </script>

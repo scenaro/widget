@@ -1,4 +1,4 @@
-import { PublicationConfig, ScenaroEventPayload, ScenaroOpenConfig } from './types';
+import { CartRequest, PublicationConfig, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 
 class ScenaroWidget {
   private publicationId: string;
@@ -236,6 +236,25 @@ class ScenaroWidget {
       // Security check: in production, check event.origin against allowed origins
       
       const payload = event.data as ScenaroEventPayload;
+      
+      // Check if this is a cart CRUD request
+      const cartRequestTypes = [
+          'SCENARO_CART_LIST_REQUEST',
+          'SCENARO_CART_ADD_REQUEST',
+          'SCENARO_CART_UPDATE_REQUEST',
+          'SCENARO_CART_REMOVE_REQUEST',
+          'SCENARO_CART_CLEAR_REQUEST'
+      ];
+      
+      if (cartRequestTypes.includes(payload.type)) {
+          // Forward cart request to engine
+          if (this.engine && typeof this.engine.handleCartRequest === 'function') {
+              this.engine.handleCartRequest(payload as CartRequest);
+          } else {
+              console.warn('[Scenaro] Engine does not support cart requests');
+          }
+          return;
+      }
       
       switch (payload.type) {
           case 'SCENARO_READY':

@@ -10,18 +10,74 @@ export interface ScenaroOpenConfig {
 
 export type ScenaroEventType = 
   | 'SCENARO_READY' 
-  | 'SCENARO_CART_ID' 
-  | 'SCENARO_END';
+  | 'SCENARO_END'
+  | 'SCENARO_CART_LIST_REQUEST'
+  | 'SCENARO_CART_ADD_REQUEST'
+  | 'SCENARO_CART_UPDATE_REQUEST'
+  | 'SCENARO_CART_REMOVE_REQUEST'
+  | 'SCENARO_CART_CLEAR_REQUEST'
+  | 'SCENARO_CART_RESPONSE';
 
 export interface ScenaroEventPayload<T = any> {
   type: ScenaroEventType;
   data?: T;
+  requestId?: string;
 }
+
+export interface CartListRequest {
+  type: 'SCENARO_CART_LIST_REQUEST';
+  requestId: string;
+}
+
+export interface CartAddRequest {
+  type: 'SCENARO_CART_ADD_REQUEST';
+  requestId: string;
+  data: {
+    productId: string | number;
+    qty?: number;
+  };
+}
+
+export interface CartUpdateRequest {
+  type: 'SCENARO_CART_UPDATE_REQUEST';
+  requestId: string;
+  data: {
+    itemId: string | number;
+    qty: number;
+  };
+}
+
+export interface CartRemoveRequest {
+  type: 'SCENARO_CART_REMOVE_REQUEST';
+  requestId: string;
+  data: {
+    itemId: string | number;
+  };
+}
+
+export interface CartClearRequest {
+  type: 'SCENARO_CART_CLEAR_REQUEST';
+  requestId: string;
+}
+
+export interface CartResponse {
+  type: 'SCENARO_CART_RESPONSE';
+  requestId: string;
+  success: boolean;
+  data?: any;
+  error?: string;
+}
+
+export type CartRequest = CartListRequest | CartAddRequest | CartUpdateRequest | CartRemoveRequest | CartClearRequest;
 
 export interface Connector {
   name: string;
-  getCartId(): Promise<string | null>;
   refreshCart(): Promise<void>;
+  listCart?(): Promise<any>;
+  addToCart?(params: { productId: string | number; qty?: number }): Promise<any>;
+  updateCart?(params: { itemId: string | number; qty: number }): Promise<any>;
+  removeCart?(params: { itemId: string | number }): Promise<any>;
+  clearCart?(): Promise<void>;
 }
 
 export interface Engine {
@@ -30,4 +86,5 @@ export interface Engine {
   setIframe(iframe: HTMLIFrameElement): void;
   connect(): Promise<void>;
   onEnd(): Promise<void>;
+  handleCartRequest?(payload: CartRequest): Promise<void>;
 }
