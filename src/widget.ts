@@ -309,11 +309,13 @@ class ScenaroWidget {
       ];
       
       if (cartRequestTypes.includes(payload.type)) {
-          // Forward cart request to engine
+          const cartPayload = payload as CartRequest;
+          // Forward cart request to engine; if engine not ready, send error response so iframe does not timeout
           if (this.engine && typeof this.engine.handleCartRequest === 'function') {
-              this.engine.handleCartRequest(payload as CartRequest);
+              this.engine.handleCartRequest(cartPayload);
           } else {
               console.warn('[Scenaro] Engine does not support cart requests');
+              this.sendCartErrorToIframe(cartPayload.requestId, 'Cart engine not ready');
           }
           return;
       }
@@ -345,6 +347,18 @@ class ScenaroWidget {
         metadata: this.metadata
       }, '*');
       console.log('[Scenaro] Sent metadata to iframe:', this.metadata);
+    }
+  }
+
+  /** Send cart error response to iframe when engine is not available (avoids iframe timeout). */
+  private sendCartErrorToIframe(requestId: string, error: string): void {
+    if (this.iframe?.contentWindow) {
+      this.iframe.contentWindow.postMessage({
+        type: 'SCENARO_CART_RESPONSE',
+        requestId,
+        success: false,
+        error
+      }, '*');
     }
   }
 
