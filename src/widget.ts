@@ -1,19 +1,13 @@
 import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 
 class ScenaroWidget {
-  private publicationId: string = '';
+  private publicationId: string;
   private iframe: HTMLIFrameElement | null = null;
   private engine: any = null; // Typed as any because it might be loaded dynamically
   private listeners: Map<string, Function[]> = new Map();
   private metadata: Record<string, any> = {};
 
   constructor() {
-    // Prevent double initialization
-    if ((window as any).Scenaro?._initialized) {
-      console.warn('[Scenaro] Widget already initialized, skipping duplicate initialization');
-      return;
-    }
-
     this.publicationId = this.detectConfig();
     this.init();
     // Mark as initialized
@@ -89,7 +83,6 @@ class ScenaroWidget {
         this.listeners.set(event, []);
     }
     this.listeners.get(event)?.push(callback);
-    console.log(`[Scenaro] Registered listener for ${event}`);
   }
 
   public off(event: string, callback: Function) {
@@ -120,7 +113,17 @@ class ScenaroWidget {
     return null;
   }
 
+  private adapterLoaded: string | null = null;
+
   private async loadAdapter(adapterName: string): Promise<void> {
+    // Skip if adapter already loaded (prevents React Strict Mode double-mount issues)
+    if (this.adapterLoaded === adapterName) {
+      return;
+    }
+
+    // Set flag immediately to prevent race condition with concurrent calls
+    this.adapterLoaded = adapterName;
+
     if (!this.publicationId) {
       console.warn('[Scenaro] No publication ID available, cannot load adapter');
       return;
@@ -135,7 +138,12 @@ class ScenaroWidget {
       await import(connectorUrl);
       console.log(`[Scenaro] Loaded connector: ${adapterName}`);
 
-      // Load engine
+      // Engine already created by loadEngine(); only load connector for this capability
+      if (this.engine) {
+        return;
+      }
+
+      // Load engine (only if not already loaded by loadEngine())
       const engineUrl = `${cdnBaseUrl}/engines/${engineName}.js`;
       const engineModule = await import(engineUrl);
       const EngineClass = engineModule[`${engineName.charAt(0).toUpperCase() + engineName.slice(1)}Engine`];
@@ -251,20 +259,6 @@ class ScenaroWidget {
           
           this.engine = new EngineClass();
           
-          // Load connector based on CMS detection
-          const adapter = this.detectCMS();
-          if (adapter) {
-              try {
-                  const connectorUrl = `${cdnBaseUrl}/connectors/${adapter}.js`;
-                  await import(connectorUrl);
-                  // Connectors are typically used by engines, so we pass them during engine initialization
-                  // The engine will handle connector setup
-                  console.log(`[Scenaro] Loaded connector: ${adapter}`);
-              } catch (error) {
-                  console.warn(`[Scenaro] Failed to load connector ${adapter}:`, error);
-              }
-          }
-          
           if (this.iframe) {
               this.engine.setIframe(this.iframe);
           }
@@ -352,7 +346,6 @@ class ScenaroWidget {
         type: 'SCENARO_METADATA',
         metadata: this.metadata
       }, '*');
-      console.log('[Scenaro] Sent metadata to iframe:', this.metadata);
     }
   }
 
@@ -389,8 +382,6 @@ class ScenaroWidget {
 
 // Auto-initialize on load
 if (typeof window !== 'undefined') {
-    // Check if already initialized to prevent double initialization
-    if (!(window as any).Scenaro?._initialized) {
-        new ScenaroWidget();
-    }
+    // Wait for DOM to be ready if needed, or just run
+    new ScenaroWidget();
 }
