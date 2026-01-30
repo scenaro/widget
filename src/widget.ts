@@ -1,13 +1,19 @@
 import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 
 class ScenaroWidget {
-  private publicationId: string;
+  private publicationId: string = '';
   private iframe: HTMLIFrameElement | null = null;
   private engine: any = null; // Typed as any because it might be loaded dynamically
   private listeners: Map<string, Function[]> = new Map();
   private metadata: Record<string, any> = {};
 
   constructor() {
+    // Prevent double initialization
+    if ((window as any).Scenaro?._initialized) {
+      console.warn('[Scenaro] Widget already initialized, skipping duplicate initialization');
+      return;
+    }
+
     this.publicationId = this.detectConfig();
     this.init();
     // Mark as initialized
@@ -383,6 +389,8 @@ class ScenaroWidget {
 
 // Auto-initialize on load
 if (typeof window !== 'undefined') {
-    // Wait for DOM to be ready if needed, or just run
-    new ScenaroWidget();
+    // Check if already initialized to prevent double initialization
+    if (!(window as any).Scenaro?._initialized) {
+        new ScenaroWidget();
+    }
 }
