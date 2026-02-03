@@ -270,21 +270,6 @@ class ScenaroWidget {
   }
 
   private getCDNBaseUrl(): string {
-      // Try to detect CDN URL from the script tag that loaded the widget
-      const scripts = document.getElementsByTagName('script');
-      for (let i = 0; i < scripts.length; i++) {
-          const script = scripts[i];
-          if (script.src && (script.src.includes('widget.js') || script.src.includes('widget.cjs'))) {
-              // Extract base URL from script src (e.g., https://cdn.scenaro.io/widget.js -> https://cdn.scenaro.io)
-              try {
-                  const url = new URL(script.src);
-                  return `${url.protocol}//${url.host}`;
-              } catch (e) {
-                  // Fallback to default
-              }
-          }
-      }
-      // Default fallback
       return 'https://cdn.scenaro.io';
   }
 
