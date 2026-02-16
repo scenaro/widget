@@ -220,9 +220,9 @@ class ScenaroWidget {
     iframe.allow = "microphone *; autoplay *";
     iframe.style.border = 'none';
     iframe.style.zIndex = '2147483647';
-    
-    // Append to container or body
-    const container = document.getElementById('scenaro-container');
+
+    // Prefer #scenaro-container so iframe is in-page (not fullscreen). Wait for it if not yet in DOM.
+    const container = await this.getContainerOrWait();
     if (container) {
       Object.assign(iframe.style, { width: '100%', height: '100%', display: 'block' });
       container.appendChild(iframe);
@@ -230,8 +230,34 @@ class ScenaroWidget {
       Object.assign(iframe.style, { position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh' });
       document.body.appendChild(iframe);
     }
-    
+
     this.iframe = iframe;
+  }
+
+  /** Wait briefly for #scenaro-container (e.g. React mount) so iframe can be in-page, not fullscreen. */
+  private getContainerOrWait(): Promise<HTMLElement | null> {
+    const id = 'scenaro-container';
+    const existing = document.getElementById(id);
+    if (existing) return Promise.resolve(existing);
+
+    const maxWait = 800;
+    const interval = 50;
+    return new Promise((resolve) => {
+      const deadline = Date.now() + maxWait;
+      const check = () => {
+        const el = document.getElementById(id);
+        if (el) {
+          resolve(el);
+          return;
+        }
+        if (Date.now() >= deadline) {
+          resolve(null);
+          return;
+        }
+        setTimeout(check, interval);
+      };
+      setTimeout(check, interval);
+    });
   }
 
   private async loadEngine() {
