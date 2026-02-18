@@ -348,6 +348,12 @@ class ScenaroWidget {
               }
               this.close();
               break;
+          case 'SCENARO_REDIRECT':
+              const url = payload.url;
+              if (url && typeof url === 'string') {
+                  window.location.href = url;
+              }
+              break;
       }
   }
 

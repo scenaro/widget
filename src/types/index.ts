@@ -11,6 +11,7 @@ export interface ScenaroOpenConfig {
 export type ScenaroEventType =
   | 'SCENARO_READY'
   | 'SCENARO_END'
+  | 'SCENARO_REDIRECT'
   | 'SCENARO_CART_LIST_REQUEST'
   | 'SCENARO_CART_ADD_REQUEST'
   | 'SCENARO_CART_UPDATE_REQUEST'
@@ -24,6 +25,8 @@ export interface ScenaroEventPayload<T = any> {
   type: ScenaroEventType;
   data?: T;
   requestId?: string;
+  /** Set when type is SCENARO_REDIRECT: URL for parent to navigate to */
+  url?: string;
 }
 
 export interface CartListRequest {
