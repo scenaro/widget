@@ -6,6 +6,8 @@ export interface PublicationConfig {
 
 export interface ScenaroOpenConfig {
   metadata?: Record<string, any>;
+  /** Override publication ID for this open (default: from script tag data-publication-id) */
+  publicationId?: string;
 }
 
 export type ScenaroEventType =

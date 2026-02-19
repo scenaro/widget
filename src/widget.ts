@@ -57,6 +57,11 @@ class ScenaroWidget {
   public async open(config?: ScenaroOpenConfig) {
     if (this.iframe) return; // Already open
 
+    // Publication ID: config override or script tag
+    const publicationId = (config?.publicationId && config.publicationId.trim() !== '')
+      ? config.publicationId.trim()
+      : this.publicationId;
+
     // Store metadata if provided
     if (config?.metadata) {
       this.metadata = { ...this.metadata, ...config.metadata };
@@ -65,8 +70,8 @@ class ScenaroWidget {
     // Emit 'open' event
     this.emit('open');
 
-    await this.createIframe();
-    await this.loadEngine();
+    await this.createIframe(publicationId);
+    await this.loadEngine(publicationId);
   }
 
   public close() {
@@ -198,17 +203,18 @@ class ScenaroWidget {
     }
   }
 
-  private async createIframe() {
+  private async createIframe(publicationId?: string) {
+    const id = publicationId ?? this.publicationId;
     const iframe = document.createElement('iframe');
     iframe.id = 'scenaro-iframe';
 
-    if (!this.publicationId) {
+    if (!id) {
       console.warn('[Scenaro] No publication ID available, cannot create iframe');
       return;
     }
 
     // Build stable embed URL (CloudFront rewrites /{uuid} to API path)
-    const baseUrl = `https://embed.scenaro.io/${this.publicationId}`;
+    const baseUrl = `https://embed.scenaro.io/${id}`;
     const url = new URL(baseUrl);
 
     // Add language from metadata if available
@@ -260,8 +266,9 @@ class ScenaroWidget {
     });
   }
 
-  private async loadEngine() {
-      if (!this.publicationId) {
+  private async loadEngine(publicationId?: string) {
+      const id = publicationId ?? this.publicationId;
+      if (!id) {
           console.warn('[Scenaro] No publication ID available, cannot load engine');
           return;
       }
@@ -289,7 +296,7 @@ class ScenaroWidget {
               this.engine.setIframe(this.iframe);
           }
           
-          await this.engine.initialize(this.publicationId);
+          await this.engine.initialize(id);
       } catch (error) {
           console.error(`[Scenaro] Failed to load engine ${engineName}:`, error);
       }
