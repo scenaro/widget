@@ -1,11 +1,16 @@
 import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 
+/** Stored overflow values to restore when exiting fullscreen */
+let parentOverflow: { html: string; body: string } | null = null;
+
 class ScenaroWidget {
   private publicationId: string;
   private iframe: HTMLIFrameElement | null = null;
   private engine: any = null; // Typed as any because it might be loaded dynamically
   private listeners: Map<string, Function[]> = new Map();
   private metadata: Record<string, any> = {};
+  /** True when iframe is appended to body (fullscreen), so we hide parent scrollbars */
+  private isFullscreenAttachment: boolean = false;
 
   constructor() {
     this.publicationId = this.detectConfig();
@@ -76,10 +81,32 @@ class ScenaroWidget {
 
   public close() {
     if (this.iframe) {
+      // Restore parent scrollbars when iframe was attached to body (no container)
+      this.setParentScrollbarsHidden(false);
+      this.isFullscreenAttachment = false;
       this.iframe.remove();
       this.iframe = null;
       // Emit 'close' event
       this.emit('close');
+    }
+  }
+
+  /** Hide or restore scrollbars on the parent document (html + body) when iframe is fullscreen. */
+  private setParentScrollbarsHidden(hide: boolean): void {
+    const doc = document;
+    const html = doc.documentElement;
+    const body = doc.body;
+    if (hide) {
+      parentOverflow = {
+        html: html.style.overflow || '',
+        body: body.style.overflow || '',
+      };
+      html.style.overflow = 'hidden';
+      body.style.overflow = 'hidden';
+    } else if (parentOverflow) {
+      html.style.overflow = parentOverflow.html;
+      body.style.overflow = parentOverflow.body;
+      parentOverflow = null;
     }
   }
 
@@ -234,6 +261,8 @@ class ScenaroWidget {
       container.appendChild(iframe);
     } else {
       Object.assign(iframe.style, { position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh' });
+      this.setParentScrollbarsHidden(true);
+      this.isFullscreenAttachment = true;
       document.body.appendChild(iframe);
     }
 
