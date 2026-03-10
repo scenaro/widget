@@ -3,6 +3,11 @@ import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroEventPayload
 /** Stored overflow values to restore when exiting fullscreen */
 let parentOverflow: { html: string; body: string } | null = null;
 
+/** Wake Lock API (screen awake) - optional on Navigator */
+interface WakeLockSentinel {
+  release(): Promise<void>;
+}
+
 class ScenaroWidget {
   private publicationId: string;
   private iframe: HTMLIFrameElement | null = null;
@@ -11,6 +16,10 @@ class ScenaroWidget {
   private metadata: Record<string, any> = {};
   /** True when iframe is appended to body (fullscreen), so we hide parent scrollbars */
   private isFullscreenAttachment: boolean = false;
+  /** Viewport listeners for fullscreen dynamic height - removed in close() */
+  private viewportResizeHandler: (() => void) | null = null;
+  private wakeLockSentinel: WakeLockSentinel | null = null;
+  private visibilityChangeHandler: (() => void) | null = null;
 
   constructor() {
     this.publicationId = this.detectConfig();
@@ -81,6 +90,9 @@ class ScenaroWidget {
 
   public close() {
     if (this.iframe) {
+      this.stopViewportListeners();
+      this.stopWakeLockVisibilityReacquire();
+      this.releaseWakeLock();
       // Restore parent scrollbars when iframe was attached to body (no container)
       this.setParentScrollbarsHidden(false);
       this.isFullscreenAttachment = false;
@@ -108,6 +120,82 @@ class ScenaroWidget {
       body.style.overflow = parentOverflow.body;
       parentOverflow = null;
     }
+  }
+
+  /** Current visible viewport height (accounts for mobile browser bar). Used for fullscreen iframe height. */
+  private getVisibleHeight(): number {
+    const vv = (window as Window & { visualViewport?: { height: number } }).visualViewport;
+    return (vv?.height ?? window.innerHeight) || window.innerHeight;
+  }
+
+  /** Apply current viewport height to iframe (fullscreen mode only). Call on resize/orientation. */
+  private applyViewportHeight(): void {
+    if (!this.iframe || !this.isFullscreenAttachment) return;
+    const h = this.getVisibleHeight();
+    this.iframe.style.height = `${h}px`;
+  }
+
+  /** Attach resize/orientation/visualViewport listeners so fullscreen iframe height tracks visible viewport. */
+  private startViewportListeners(): void {
+    if (!this.isFullscreenAttachment || this.viewportResizeHandler) return;
+    const apply = () => this.applyViewportHeight();
+    this.viewportResizeHandler = apply;
+    window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', apply);
+    const vv = (window as Window & { visualViewport?: { addEventListener: (e: string, fn: () => void) => void } }).visualViewport;
+    if (vv?.addEventListener) vv.addEventListener('resize', apply);
+    this.applyViewportHeight();
+  }
+
+  /** Remove viewport listeners. Call on close. */
+  private stopViewportListeners(): void {
+    if (!this.viewportResizeHandler) return;
+    const apply = this.viewportResizeHandler;
+    this.viewportResizeHandler = null;
+    window.removeEventListener('resize', apply);
+    window.removeEventListener('orientationchange', apply);
+    const vv = (window as Window & { visualViewport?: { removeEventListener: (e: string, fn: () => void) => void } }).visualViewport;
+    if (vv?.removeEventListener) vv.removeEventListener('resize', apply);
+  }
+
+  /** Acquire screen wake lock so device doesn't sleep while iframe is open. No-op if unsupported. */
+  private async acquireWakeLock(): Promise<void> {
+    const nav = navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLockSentinel> } };
+    if (!nav.wakeLock) return;
+    try {
+      this.wakeLockSentinel = await nav.wakeLock.request('screen');
+    } catch {
+      // Unsupported or denied; fail silently
+    }
+  }
+
+  /** Release wake lock. Call on close. */
+  private async releaseWakeLock(): Promise<void> {
+    if (!this.wakeLockSentinel) return;
+    try {
+      await this.wakeLockSentinel.release();
+    } catch {
+      // ignore
+    }
+    this.wakeLockSentinel = null;
+  }
+
+  /** Re-acquire wake lock when tab becomes visible and iframe is still open. */
+  private startWakeLockVisibilityReacquire(): void {
+    if (this.visibilityChangeHandler) return;
+    this.visibilityChangeHandler = () => {
+      if (document.visibilityState === 'visible' && this.iframe) {
+        this.acquireWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+  }
+
+  /** Remove visibilitychange listener. Call on close. */
+  private stopWakeLockVisibilityReacquire(): void {
+    if (!this.visibilityChangeHandler) return;
+    document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+    this.visibilityChangeHandler = null;
   }
 
   public on(event: string, callback: Function) {
@@ -260,13 +348,24 @@ class ScenaroWidget {
       Object.assign(iframe.style, { width: '100%', height: '100%', display: 'block' });
       container.appendChild(iframe);
     } else {
-      Object.assign(iframe.style, { position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh' });
+      const visibleHeight = this.getVisibleHeight();
+      Object.assign(iframe.style, {
+        position: 'fixed',
+        top: '0',
+        left: '0',
+        width: '100vw',
+        height: `${visibleHeight}px`,
+      });
       this.setParentScrollbarsHidden(true);
       this.isFullscreenAttachment = true;
       document.body.appendChild(iframe);
+      this.iframe = iframe;
+      this.startViewportListeners();
     }
 
     this.iframe = iframe;
+    this.acquireWakeLock();
+    this.startWakeLockVisibilityReacquire();
   }
 
   /** Wait briefly for #scenaro-container (e.g. React mount) so iframe can be in-page, not fullscreen. */
