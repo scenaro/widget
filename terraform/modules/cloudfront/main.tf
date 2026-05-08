@@ -20,7 +20,7 @@ resource "aws_cloudfront_distribution" "main" {
 
   origin {
     domain_name              = var.s3_bucket_domain_name
-    origin_id               = "S3-${var.s3_bucket_id}"
+    origin_id                = "S3-${var.s3_bucket_id}"
     origin_access_control_id = aws_cloudfront_origin_access_control.main.id
   }
 
@@ -63,8 +63,8 @@ resource "aws_cloudfront_distribution" "main" {
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 3600     # 1 hour (runtime can change more frequently)
-    max_ttl                = 86400    # 1 day
+    default_ttl            = 3600  # 1 hour (runtime can change more frequently)
+    max_ttl                = 86400 # 1 day
     compress               = true
 
     response_headers_policy_id = aws_cloudfront_response_headers_policy.main.id
@@ -141,8 +141,8 @@ resource "aws_cloudfront_response_headers_policy" "main" {
   security_headers_config {
     strict_transport_security {
       access_control_max_age_sec = 31536000
-      include_subdomains          = true
-      override                     = true
+      include_subdomains         = true
+      override                   = true
     }
     content_type_options {
       override = true
@@ -174,8 +174,8 @@ resource "aws_cloudfront_response_headers_policy" "main" {
       items = ["GET", "HEAD", "OPTIONS"]
     }
     access_control_allow_credentials = false
-    access_control_max_age_sec        = 3600
-    origin_override                    = true
+    access_control_max_age_sec       = 3600
+    origin_override                  = true
   }
 }
 

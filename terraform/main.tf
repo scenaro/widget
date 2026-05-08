@@ -5,7 +5,7 @@ terraform {
       version = "~> 5.0"
     }
   }
-  
+
   # Using the same backend configuration structure as platform-api
   backend "s3" {
     bucket         = "scenaro-tfstate"
@@ -35,7 +35,7 @@ data "aws_route53_zone" "main" {
 locals {
   domain_name = "cdn.scenaro.io"
   bucket_name = "scenaro-widget-sdk-cdn"
-  
+
   common_tags = {
     Project     = "scenaro-widget-sdk"
     Environment = "production"
@@ -68,11 +68,11 @@ module "s3" {
 module "cloudfront" {
   source = "./modules/cloudfront"
 
-  domain_name            = local.domain_name
-  s3_bucket_id           = module.s3.bucket_id
-  s3_bucket_domain_name  = module.s3.bucket_domain_name
-  certificate_arn        = module.acm.certificate_validation_arn
-  common_tags            = local.common_tags
+  domain_name           = local.domain_name
+  s3_bucket_id          = module.s3.bucket_id
+  s3_bucket_domain_name = module.s3.bucket_domain_name
+  certificate_arn       = module.acm.certificate_validation_arn
+  common_tags           = local.common_tags
 }
 
 # S3 bucket policy to allow CloudFront access

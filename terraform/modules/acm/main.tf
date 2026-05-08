@@ -28,13 +28,13 @@ resource "aws_acm_certificate" "main" {
 resource "aws_acm_certificate_validation" "main" {
   count    = var.zone_id != "" ? 1 : 0
   provider = aws.us_east_1
-  
+
   certificate_arn = aws_acm_certificate.main.arn
 
   validation_record_fqdns = [
     for record in aws_route53_record.cert_validation : record.fqdn
   ]
-  
+
   depends_on = [aws_route53_record.cert_validation]
 
   timeouts {
