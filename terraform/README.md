@@ -80,7 +80,7 @@ If you need to deploy manually:
 ```bash
 cd widget
 npm run build
-aws s3 sync dist/ s3://scenaro-widget-sdk-cdn/ --delete
+aws s3 sync dist/ s3://scenaro-widget-cdn/ --delete
 aws cloudfront create-invalidation --distribution-id <DIST_ID> --paths "/*"
 ```
 

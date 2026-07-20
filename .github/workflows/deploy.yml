@@ -54,7 +54,7 @@ jobs:
         run: |
           # Initialize Terraform to access remote state
           terraform init -backend-config="bucket=scenaro-tfstate" \
-                         -backend-config="key=scenaro/widget-sdk/production/terraform.tfstate" \
+                         -backend-config="key=scenaro/widget/production/terraform.tfstate" \
                          -backend-config="region=eu-west-3" \
                          -backend-config="dynamodb_table=scenaro-tf-locks" \
                          -backend-config="encrypt=true" \
@@ -84,14 +84,14 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          aws s3 sync dist/ s3://scenaro-widget-sdk-cdn/ \
+          aws s3 sync dist/ s3://scenaro-widget-cdn/ \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
             --exclude "runtime/*" \
             --exclude "*.html"
           
           # Runtime files with shorter cache
-          aws s3 sync dist/runtime/ s3://scenaro-widget-sdk-cdn/runtime/ \
+          aws s3 sync dist/runtime/ s3://scenaro-widget-cdn/runtime/ \
             --delete \
             --cache-control "public, max-age=3600"
 

@@ -9,7 +9,7 @@ terraform {
   # Using the same backend configuration structure as platform-api
   backend "s3" {
     bucket         = "scenaro-tfstate"
-    key            = "scenaro/widget-sdk/production/terraform.tfstate"
+    key            = "scenaro/widget/production/terraform.tfstate"
     region         = "eu-west-3"
     dynamodb_table = "scenaro-tf-locks"
     encrypt        = true
@@ -34,10 +34,10 @@ data "aws_route53_zone" "main" {
 
 locals {
   domain_name = "cdn.scenaro.io"
-  bucket_name = "scenaro-widget-sdk-cdn"
+  bucket_name = "scenaro-widget-cdn"
 
   common_tags = {
-    Project     = "scenaro-widget-sdk"
+    Project     = "scenaro-widget"
     Environment = "production"
     ManagedBy   = "Terraform"
   }

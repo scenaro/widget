@@ -15,7 +15,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-S3_BUCKET="scenaro-widget-sdk-cdn"
+S3_BUCKET="scenaro-widget-cdn"
 CLOUDFRONT_DIST_ID="E2USPRRPYV6SLU"
 CLOUDFRONT_DOMAIN="d69oiovkxf69d.cloudfront.net"
 CUSTOM_DOMAIN="cdn.scenaro.io"
