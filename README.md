@@ -1,8 +1,8 @@
-# Scenaro Widget SDK
+# Scenaro Widget
 
-Widget SDK for embedding Scenaro experiences into websites.
+Widget for embedding Scenaro experiences into websites.
 
-cd widget-sdk/dist && npx serve -p 3333 -C
+cd widget/dist && npx serve -p 3333 -C
 
 ## Installation
 

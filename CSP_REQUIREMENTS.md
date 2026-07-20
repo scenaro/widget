@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Scenaro Widget SDK makes API calls from the **parent page** (not the iframe), so CSP rules must be configured on the parent page that loads the widget script.
+The Scenaro Widget makes API calls from the **parent page** (not the iframe), so CSP rules must be configured on the parent page that loads the widget script.
 
 ## Required CSP Directives
 

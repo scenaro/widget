@@ -12,7 +12,7 @@ resource "aws_cloudfront_origin_access_control" "main" {
 resource "aws_cloudfront_distribution" "main" {
   enabled             = true
   is_ipv6_enabled     = true
-  comment             = "CDN for Scenaro Widget SDK"
+  comment             = "CDN for Scenaro Widget"
   default_root_object = "widget.js"
   price_class         = "PriceClass_100" # Use only North America and Europe (cheaper)
 

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Verification script for widget-sdk deployment
+# Verification script for widget deployment
 # Usage: ./verify-deployment.sh
 
 set -e
 
-echo "🔍 Verifying Widget SDK Deployment..."
+echo "🔍 Verifying Widget Deployment..."
 echo ""
 
 # Colors for output

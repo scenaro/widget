@@ -1,6 +1,6 @@
-# Widget SDK Infrastructure
+# Widget Infrastructure
 
-This Terraform configuration deploys the Scenaro Widget SDK to AWS using S3 + CloudFront.
+This Terraform configuration deploys the Scenaro Widget to AWS using S3 + CloudFront.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ This Terraform configuration deploys the Scenaro Widget SDK to AWS using S3 + Cl
 
 2. **Initialize Terraform**:
    ```bash
-   cd widget-sdk/terraform
+   cd widget/terraform
    terraform init
    ```
 
@@ -78,7 +78,7 @@ If you don't set `zone_id`, ACM will require manual DNS validation:
 If you need to deploy manually:
 
 ```bash
-cd widget-sdk
+cd widget
 npm run build
 aws s3 sync dist/ s3://scenaro-widget-sdk-cdn/ --delete
 aws cloudfront create-invalidation --distribution-id <DIST_ID> --paths "/*"

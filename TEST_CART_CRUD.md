@@ -12,22 +12,22 @@
 
 ## Test Snippet for Magento Website Console
 
-This snippet loads the Widget SDK from CDN and tests cart CRUD operations via postMessage (simulating iframe communication).
+This snippet loads the Widget from CDN and tests cart CRUD operations via postMessage (simulating iframe communication).
 
 **If CSP blocks the script loading**, the snippet will detect if the widget is already loaded and proceed with testing.
 
 Copy and paste this snippet into the browser console on a Magento website (not in the iframe):
 
 ```javascript
-// Test Cart CRUD functionality via Widget SDK postMessage
+// Test Cart CRUD functionality via Widget postMessage
 (async function() {
-  console.log('🧪 Testing Magento Cart CRUD via Widget SDK...\n');
+  console.log('🧪 Testing Magento Cart CRUD via Widget...\n');
 
   // Step 1: Load the widget SDK from CDN (or use if already loaded)
-  async function loadWidgetSDK() {
+  async function loadWidget() {
     // Check if already loaded
     if (window.Scenaro && window.Scenaro._initialized) {
-      console.log('✅ Widget SDK already loaded on page');
+      console.log('✅ Widget already loaded on page');
       return Promise.resolve();
     }
 
@@ -39,13 +39,13 @@ Copy and paste this snippet into the browser console on a Magento website (not i
         const script = document.createElement('script');
         script.src = 'https://cdn.scenaro.io/widget.js';
         script.onload = () => {
-          console.log('✅ Widget SDK loaded');
+          console.log('✅ Widget loaded');
           setTimeout(() => {
             if (window.Scenaro) {
-              console.log('✅ Widget SDK initialized');
+              console.log('✅ Widget initialized');
               resolve();
             } else {
-              reject(new Error('Widget SDK failed to initialize'));
+              reject(new Error('Widget failed to initialize'));
             }
           }, 500);
         };
@@ -56,10 +56,10 @@ Copy and paste this snippet into the browser console on a Magento website (not i
           // Check again after a moment (maybe it's loading via another method)
           setTimeout(() => {
             if (window.Scenaro && window.Scenaro._initialized) {
-              console.log('✅ Widget SDK found on page (loaded via script tag)');
+              console.log('✅ Widget found on page (loaded via script tag)');
               resolve();
             } else {
-              reject(new Error('Widget SDK not found. CSP may be blocking. Try adding the script tag manually or check if widget is already in page HTML.'));
+              reject(new Error('Widget not found. CSP may be blocking. Try adding the script tag manually or check if widget is already in page HTML.'));
             }
           }, 1000);
         };
@@ -68,10 +68,10 @@ Copy and paste this snippet into the browser console on a Magento website (not i
         console.warn('⚠️  Error creating script tag:', error);
         // Check if widget is already available
         if (window.Scenaro && window.Scenaro._initialized) {
-          console.log('✅ Widget SDK found on page');
+          console.log('✅ Widget found on page');
           resolve();
         } else {
-          reject(new Error('CSP blocked script loading. Widget SDK must be loaded via script tag in page HTML.'));
+          reject(new Error('CSP blocked script loading. Widget must be loaded via script tag in page HTML.'));
         }
       }
     });
@@ -172,7 +172,7 @@ Copy and paste this snippet into the browser console on a Magento website (not i
   async function runTests() {
     try {
       // Load widget SDK
-      await loadWidgetSDK();
+      await loadWidget();
 
       // Setup message listener
       const { sendCartRequest } = await setupResponseListener();
@@ -307,11 +307,11 @@ If the widget SDK is already loaded on the page (via a `<script>` tag in the HTM
 // Test Cart CRUD - Widget already loaded on page
 (function() {
   if (!window.Scenaro) {
-    console.error('❌ Widget SDK not found. Make sure it\'s loaded on the page.');
+    console.error('❌ Widget not found. Make sure it\'s loaded on the page.');
     return;
   }
 
-  console.log('✅ Widget SDK found, setting up tests...\n');
+  console.log('✅ Widget found, setting up tests...\n');
 
   const pendingRequests = new Map();
 
@@ -365,9 +365,9 @@ If the widget SDK is already loaded on the page (via a `<script>` tag in the HTM
 Here's a simpler, working approach that loads the SDK and tests via postMessage:
 
 ```javascript
-// Test Cart CRUD via Widget SDK - Simplified Version
+// Test Cart CRUD via Widget - Simplified Version
 (async function() {
-  console.log('🧪 Testing Cart CRUD via Widget SDK...\n');
+  console.log('🧪 Testing Cart CRUD via Widget...\n');
 
   // Step 1: Load widget SDK from CDN (or use if already loaded)
   if (!window.Scenaro) {
@@ -381,10 +381,10 @@ Here's a simpler, working approach that loads the SDK and tests via postMessage:
         script.onload = () => {
           setTimeout(() => {
             if (window.Scenaro) {
-              console.log('✅ Widget SDK loaded and initialized');
+              console.log('✅ Widget loaded and initialized');
               resolve();
             } else {
-              reject(new Error('Widget SDK failed to initialize'));
+              reject(new Error('Widget failed to initialize'));
             }
           }, 500);
         };
@@ -393,7 +393,7 @@ Here's a simpler, working approach that loads the SDK and tests via postMessage:
           console.log('💡 Checking if widget is already on page...');
           setTimeout(() => {
             if (window.Scenaro) {
-              console.log('✅ Widget SDK found on page');
+              console.log('✅ Widget found on page');
               resolve();
             } else {
               reject(new Error('CSP blocked. Widget must be loaded via script tag in page HTML.'));
@@ -404,13 +404,13 @@ Here's a simpler, working approach that loads the SDK and tests via postMessage:
       });
     } catch (error) {
       if (window.Scenaro) {
-        console.log('✅ Widget SDK found on page (loaded via script tag)');
+        console.log('✅ Widget found on page (loaded via script tag)');
       } else {
         throw error;
       }
     }
   } else {
-    console.log('✅ Widget SDK already loaded');
+    console.log('✅ Widget already loaded');
   }
 
   // Step 2: Setup response listener and test functions

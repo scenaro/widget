@@ -44,7 +44,7 @@ resource "aws_s3_bucket_cors_configuration" "main" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "HEAD"]
-    allowed_origins = ["*"] # Widget SDK needs to be accessible from any origin
+    allowed_origins = ["*"] # Widget needs to be accessible from any origin
     expose_headers  = ["ETag"]
     max_age_seconds = 3600
   }
