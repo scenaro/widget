@@ -31,9 +31,9 @@ describe('beginPageTakeover', () => {
 
     const session = beginPageTakeover({ duration: 0, sweep: 0, coverMs: 0, holdMs: 0, force: true });
     const cover = document.querySelector('[data-scenaro-cover]') as HTMLIFrameElement;
-    expect(cover.srcdoc).toContain('Une expérience propulsée par');
     expect(cover.srcdoc).toContain('>scenaro<');
     expect(cover.srcdoc).toContain('Chargement en cours');
+    expect(cover.srcdoc).not.toContain('propuls');
     const experience = document.createElement('iframe');
     experience.id = 'scenaro-iframe';
     document.documentElement.appendChild(experience);
@@ -46,6 +46,8 @@ describe('beginPageTakeover', () => {
     expect(experience.style.transform).toBe('');
 
     await session.restore();
+    expect(document.documentElement.classList.contains('scenaro-clear-overlays')).toBe(false);
+    expect(document.querySelector('[data-scenaro-overlay-clear]')).toBeNull();
     expect(document.querySelector('[data-scenaro-wrap]')).toBeNull();
     expect(document.querySelector('[data-scenaro-cover]')).toBeNull();
     expect(document.body.style.position).toBe('');

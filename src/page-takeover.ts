@@ -71,6 +71,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   const sweep = reduce ? 0 : (options.sweep ?? 900);
   const coverMs = options.coverMs ?? 220;
   const holdMs = options.holdMs ?? 2000;
+  const overlayMs = options.duration === 0 && options.sweep === 0 ? 0 : (reduce ? 0 : 180);
 
   const wrapped = wrapLooseText(document.body);
   const restoreSheet = layWhiteSheet();
@@ -102,6 +103,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   let coverShown = false;
   let playing: Promise<void> | null = null;
   let restoring: Promise<void> | null = null;
+  let removeOverlayClear = () => {};
 
   const play = (): Promise<void> => {
     if (restored) return Promise.resolve();
@@ -128,8 +130,18 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   return { play, fadeCoverOut, restore };
 
   async function runPlay(): Promise<void> {
-    const seen = items.filter((item) => item.seen).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
-    const hidden = items.filter((item) => !item.seen);
+    removeOverlayClear = clearPageOverlays(overlayMs);
+    const overlayAnims: Animation[] = [];
+    for (const item of items) {
+      if (item.kind !== 'shell') continue;
+      const anim = playOut(item, { duration: overlayMs, easing: 'ease', fill: 'forwards' });
+      if (anim) overlayAnims.push(anim);
+    }
+    await whenDone(overlayAnims, overlayMs);
+    if (restored) return;
+
+    const seen = items.filter((item) => item.kind === 'atom' && item.seen).sort((a, b) => a.key - b.key);
+    const hidden = items.filter((item) => item.kind === 'atom' && !item.seen);
     const gap = seen.length > 1 ? sweep / (seen.length - 1) : 0;
     for (const item of hidden) playOut(item, { duration: 0, fill: 'forwards' });
     seen.forEach((item, index) => playOut(item, {
@@ -140,11 +152,11 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     }));
     await whenDone(anims, sweep + duration);
     if (restored) return;
-    await fadeOpacity(frame, 0, 1, coverMs);
-    if (restored) return;
     coverShown = true;
     releasePointer();
     startCoverLoader(frame, holdMs);
+    await fadeOpacity(frame, 0, 1, coverMs);
+    if (restored) return;
     if (holdMs > 0) await sleep(holdMs);
   }
 
@@ -153,14 +165,15 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     cancel(anims);
     if (coverShown) await fadeOpacity(frame, 1, 0, coverMs > 0 ? 280 : 0);
     frame.remove();
+    removeOverlayClear();
     restoreSheet();
     unwrap(wrapped);
     releasePointer();
     unlockScroll();
   }
 
-  function playOut(item: Item, timing: KeyframeAnimationOptions): void {
-    if (restored) return;
+  function playOut(item: Item, timing: KeyframeAnimationOptions): Animation | null {
+    if (restored) return null;
     try {
       const anim = item.kind === 'atom'
         ? item.el.animate(
@@ -169,8 +182,10 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
         )
         : item.el.animate([item.from, item.to], timing);
       anims.push(anim);
+      return anim;
     } catch {
       // Older browsers without the Web Animations API keep the page still.
+      return null;
     }
   }
 }
@@ -314,7 +329,44 @@ function shellPaint(style: CSSStyleDeclaration): { from: Paint; to: Paint } | nu
     from.boxShadow = style.boxShadow;
     to.boxShadow = 'none';
   }
+  if (style.backdropFilter && style.backdropFilter !== 'none') {
+    from.backdropFilter = style.backdropFilter;
+    to.backdropFilter = 'none';
+  }
   return Object.keys(from).length ? { from, to } : null;
+}
+
+function clearPageOverlays(ms: number): () => void {
+  const style = document.createElement('style');
+  style.dataset.scenaroOverlayClear = '1';
+  style.textContent = [
+    `html.scenaro-clear-overlays{--scenaro-overlay-ms:${ms}ms;}`,
+    'html.scenaro-clear-overlays *::before,',
+    'html.scenaro-clear-overlays *::after{',
+    'opacity:0 !important;',
+    'background:none !important;',
+    'background-image:none !important;',
+    'box-shadow:none !important;',
+    'backdrop-filter:none !important;',
+    '-webkit-backdrop-filter:none !important;',
+    'transition:opacity var(--scenaro-overlay-ms) ease !important;',
+    '}',
+    'html.scenaro-clear-overlays [data-scenaro-chrome]::before,',
+    'html.scenaro-clear-overlays [data-scenaro-chrome]::after,',
+    'html.scenaro-clear-overlays [data-scenaro-chrome] *::before,',
+    'html.scenaro-clear-overlays [data-scenaro-chrome] *::after{',
+    'opacity:revert !important;background:revert !important;box-shadow:revert !important;transition:none !important;',
+    '}',
+  ].join('');
+  document.documentElement.classList.add('scenaro-clear-overlays');
+  document.documentElement.appendChild(style);
+  let removed = false;
+  return () => {
+    if (removed) return;
+    removed = true;
+    document.documentElement.classList.remove('scenaro-clear-overlays');
+    style.remove();
+  };
 }
 
 function collectShells(root: Element, atoms: HTMLElement[]): ShellItem[] {
@@ -507,30 +559,29 @@ function sleep(ms: number): Promise<void> {
 function coverDocument(): string {
   return `<!DOCTYPE html><html><head><style>
     html,body{margin:0;height:100%;background:#fff;color:#1a1820;}
-    body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:64px;padding:32px;font-family:Inter,system-ui,sans-serif;}
-    .lead{margin:0 0 22px;font-size:15px;font-weight:450;letter-spacing:.01em;text-align:center;color:#6f6a63;}
-    .brand{display:flex;align-items:center;justify-content:center;gap:14px;}
+    body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px;padding:32px;font-family:Inter,system-ui,sans-serif;}
+    .brand{display:flex;align-items:center;justify-content:center;gap:14px;opacity:0;transform:translateY(12px);}
     svg{width:44px;height:44px;display:block;}
     .brand span{font-size:34px;font-weight:520;letter-spacing:-.04em;line-height:1;}
-    .status{display:flex;flex-direction:column;align-items:center;gap:14px;}
+    .status{display:flex;flex-direction:column;align-items:center;gap:14px;opacity:0;transform:translateY(12px);}
     .status p{margin:0;font-size:13px;letter-spacing:.04em;color:#8a847c;}
     .track{width:148px;height:2px;border-radius:999px;background:#eceae6;overflow:hidden;}
     .bar{height:100%;width:0;border-radius:inherit;background:#1a1820;animation:scenaro-load 2s cubic-bezier(.4,0,.2,1) forwards;animation-play-state:paused;}
+    .run .brand{animation:scenaro-in .72s cubic-bezier(.22,1,.36,1) forwards;}
+    .run .status{animation:scenaro-in .72s cubic-bezier(.22,1,.36,1) .2s forwards;}
     .run .bar{animation-play-state:running;}
+    @keyframes scenaro-in{to{opacity:1;transform:none;}}
     @keyframes scenaro-load{to{width:100%;}}
   </style></head><body>
-    <div>
-      <p class="lead">Une expérience propulsée par</p>
-      <div class="brand">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" aria-hidden="true">
-          <defs><linearGradient id="ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stop-color="#1a1820" stop-opacity="0.05"/>
-            <stop offset="1" stop-color="#1a1820" stop-opacity="1"/>
-          </linearGradient></defs>
-          <path fill="url(#ring)" fill-rule="evenodd" d="M128 32a96 96 0 1 1 0 192 96 96 0 0 1 0-192Zm0 32a64 64 0 1 0 0 128 64 64 0 0 0 0-128Z"/>
-        </svg>
-        <span>scenaro</span>
-      </div>
+    <div class="brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+        <defs><linearGradient id="ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#1a1820" stop-opacity="0.05"/>
+          <stop offset="1" stop-color="#1a1820" stop-opacity="1"/>
+        </linearGradient></defs>
+        <path fill="url(#ring)" fill-rule="evenodd" d="M128 32a96 96 0 1 1 0 192 96 96 0 0 1 0-192Zm0 32a64 64 0 1 0 0 128 64 64 0 0 0 0-128Z"/>
+      </svg>
+      <span>scenaro</span>
     </div>
     <div class="status">
       <p>Chargement en cours</p>
