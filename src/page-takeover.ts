@@ -50,7 +50,6 @@ interface AtomItem {
   opacity: string;
   exit: number;
   key: number;
-  seen: boolean;
 }
 
 interface ShellItem {
@@ -60,43 +59,41 @@ interface ShellItem {
   to: Paint;
   exit: number;
   key: number;
-  seen: boolean;
 }
 
 type Item = AtomItem | ShellItem;
 
 export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeoverSession {
   const reduce = !options.force && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const duration = options.duration ?? (reduce ? 180 : 640);
-  const sweep = reduce ? 0 : (options.sweep ?? 1500);
+  const duration = options.duration ?? (reduce ? 180 : 700);
+  const sweep = reduce ? 0 : (options.sweep ?? 1800);
   const coverMs = options.coverMs ?? 220;
   const holdMs = options.holdMs ?? 2000;
   const overlayMs = options.duration === 0 && options.sweep === 0 ? 0 : (reduce ? 0 : 180);
 
   const wrapped = wrapLooseText(document.body);
   const restoreSheet = layWhiteSheet();
+  const unlockScroll = lockScroll();
+  const releasePointer = blockPointer();
+  const frame = coverWithWhiteFrame();
   const atoms = collectAtoms(document.documentElement);
   const shells = collectShells(document.documentElement, atoms);
   const items: Item[] = [
     ...atoms.map((el): AtomItem => {
-      const spot = spotOf(el);
+      const spot = placeOf(el);
       return {
         el,
         kind: 'atom',
         opacity: getComputedStyle(el).opacity,
         exit: reduce ? 0 : spot.exit,
         key: spot.key,
-        seen: spot.seen,
       };
     }),
     ...shells.map((shell): ShellItem => {
-      const spot = spotOf(shell.el);
-      return { ...shell, kind: 'shell', exit: 0, key: spot.key, seen: spot.seen };
+      const spot = placeOf(shell.el);
+      return { ...shell, kind: 'shell', exit: 0, key: spot.key };
     }),
   ];
-  const unlockScroll = lockScroll();
-  const releasePointer = blockPointer();
-  const frame = coverWithWhiteFrame();
 
   const anims: Animation[] = [];
   let restored = false;
@@ -131,11 +128,9 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
 
   async function runPlay(): Promise<void> {
     removeOverlayClear = clearPageOverlays(overlayMs);
-    const seen = items.filter((item) => item.seen).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
-    const hidden = items.filter((item) => !item.seen);
-    const gap = seen.length > 1 ? sweep / (seen.length - 1) : 0;
-    for (const item of hidden) playOut(item, { duration: 0, fill: 'forwards' });
-    seen.forEach((item, index) => playOut(item, {
+    const ordered = [...items].sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
+    const gap = ordered.length > 1 ? sweep / (ordered.length - 1) : 0;
+    ordered.forEach((item, index) => playOut(item, {
       duration,
       delay: index * gap,
       easing: 'cubic-bezier(0.45, 0, 1, 1)',
@@ -168,7 +163,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     try {
       const anim = item.kind === 'atom'
         ? item.el.animate(
-          item.seen ? depart(item.opacity, item.exit) : [{ opacity: item.opacity }, { opacity: '0' }],
+          depart(item.opacity, item.exit),
           timing,
         )
         : item.el.animate([item.from, item.to], timing);
@@ -371,7 +366,7 @@ function collectShells(root: Element, atoms: HTMLElement[]): ShellItem[] {
     const isCanvas = el === document.documentElement || el === document.body;
     if (!insideAtom && !isAtom && !isCanvas && el instanceof HTMLElement && hasBox(el, style)) {
       const paint = shellPaint(style);
-      if (paint) shells.push({ el, kind: 'shell', exit: 0, key: 0, seen: false, ...paint });
+      if (paint) shells.push({ el, kind: 'shell', exit: 0, key: 0, ...paint });
     }
     if (isAtom || ATOM.has(el.tagName)) return;
     for (const child of el.children) collect(child, insideAtom);
@@ -383,16 +378,10 @@ function collectShells(root: Element, atoms: HTMLElement[]): ShellItem[] {
   return shells;
 }
 
-function spotOf(el: Element): { seen: boolean; key: number; exit: number } {
+function placeOf(el: Element): { key: number; exit: number } {
   const rect = el.getBoundingClientRect();
-  const height = window.innerHeight;
-  const width = window.innerWidth;
-  const visibleW = Math.min(rect.right, width) - Math.max(rect.left, 0);
-  const visibleH = Math.min(rect.bottom, height) - Math.max(rect.top, 0);
-  const seen = rect.width >= 1 && rect.height >= 1 && visibleW >= 1 && visibleH >= 1;
-  const y = Math.min(Math.max(rect.top, 0), height);
-  const row = Math.floor(y / 34);
-  return { seen, key: row * 1e7 + Math.max(rect.left, 0), exit: Math.max(72, width - rect.left + 36) };
+  const row = Math.floor((rect.top + rect.height / 2) / 34);
+  return { key: row * 1e7 + rect.left, exit: Math.max(72, window.innerWidth - rect.left + 36) };
 }
 
 function depart(opacity: string, exit: number): Keyframe[] {
