@@ -104,6 +104,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   let playing: Promise<void> | null = null;
   let restoring: Promise<void> | null = null;
   let removeOverlayClear = () => {};
+  let restoreClipping = () => {};
 
   const play = (): Promise<void> => {
     if (restored) return Promise.resolve();
@@ -131,6 +132,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
 
   async function runPlay(): Promise<void> {
     removeOverlayClear = clearPageOverlays(overlayMs);
+    restoreClipping = openClipping(items);
     const seen = items.filter((item) => item.seen).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
     const hidden = items.filter((item) => !item.seen);
     const gap = seen.length > 1 ? sweep / (seen.length - 1) : 0;
@@ -157,6 +159,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     if (coverShown) await fadeOpacity(frame, 1, 0, coverMs > 0 ? 280 : 0);
     frame.remove();
     removeOverlayClear();
+    restoreClipping();
     restoreSheet();
     unwrap(wrapped);
     releasePointer();
@@ -381,6 +384,43 @@ function collectShells(root: Element, atoms: HTMLElement[]): ShellItem[] {
   };
   collect(root, false);
   return shells;
+}
+
+function openClipping(items: Item[]): () => void {
+  const saved: { el: HTMLElement; value: string; priority: string }[] = [];
+  const opened = new Set<HTMLElement>();
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  for (const item of items) {
+    if (!item.seen) continue;
+    let parent = item.el.parentElement;
+    while (parent && parent !== document.body && parent !== document.documentElement) {
+      if (!opened.has(parent)) {
+        const style = getComputedStyle(parent);
+        const clips = style.overflowX === 'hidden' || style.overflowX === 'clip'
+          || style.overflowX === 'auto' || style.overflowX === 'scroll';
+        if (clips) {
+          const rect = parent.getBoundingClientRect();
+          if (rect.width < width - 8 && rect.height < height - 8) {
+            opened.add(parent);
+            saved.push({
+              el: parent,
+              value: parent.style.getPropertyValue('overflow'),
+              priority: parent.style.getPropertyPriority('overflow'),
+            });
+            parent.style.setProperty('overflow', 'visible', 'important');
+          }
+        }
+      }
+      parent = parent.parentElement;
+    }
+  }
+  return () => {
+    for (const item of saved) {
+      if (item.value) item.el.style.setProperty('overflow', item.value, item.priority);
+      else item.el.style.removeProperty('overflow');
+    }
+  };
 }
 
 function spotOf(el: Element): { seen: boolean; key: number; exit: number } {
