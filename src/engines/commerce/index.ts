@@ -1,4 +1,6 @@
 import { MagentoConnector } from '../../connectors/magento';
+import { ShopifyConnector } from '../../connectors/shopify';
+import { detectStorefront } from '../../storefront';
 import { CartRequest, CartResponse, Connector, Engine } from '../../types';
 
 export class CommerceEngine implements Engine {
@@ -7,13 +9,9 @@ export class CommerceEngine implements Engine {
   private iframe: HTMLIFrameElement | null = null;
 
   constructor() {
-    // In a real implementation, we might detect the platform dynamically
-    // For this MVP, we default to Magento or allow config injection
-    // Simple detection logic:
-    if (typeof window !== 'undefined' && (window as any).requirejs) {
-       // Very rough heuristic for Magento 2
-       this.connector = MagentoConnector;
-    }
+    const storefront = detectStorefront();
+    if (storefront === 'shopify') this.connector = ShopifyConnector;
+    else if (storefront === 'magento') this.connector = MagentoConnector;
   }
 
   async initialize(publicationId: string): Promise<void> {
@@ -63,6 +61,7 @@ export class CommerceEngine implements Engine {
           if (this.connector.addToCart && payload.data) {
             result = await this.connector.addToCart({
               productId: payload.data.productId,
+              variantId: payload.data.variantId,
               qty: payload.data.qty
             });
           } else {
@@ -96,8 +95,7 @@ export class CommerceEngine implements Engine {
 
         case 'SCENARO_CART_CLEAR_REQUEST':
           if (this.connector.clearCart) {
-            await this.connector.clearCart();
-            result = { cleared: true };
+            result = await this.connector.clearCart();
           } else {
             success = false;
             error = 'clearCart method not available';

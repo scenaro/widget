@@ -1,0 +1,513 @@
+/**
+ * Clears the visible page, then leaves room for the experience iframe.
+ * The store DOM stays in place so the cart engine can still reach it.
+ * restore() puts the page back.
+ */
+
+export type AppearanceName = 'takeover' | 'panel';
+
+export function appearanceOf(value: string | null | undefined): AppearanceName {
+  return value?.trim() === 'panel' ? 'panel' : 'takeover';
+}
+
+export interface PageTakeoverOptions {
+  force?: boolean;
+  duration?: number;
+  sweep?: number;
+  coverMs?: number;
+}
+
+export interface PageTakeoverSession {
+  play(): Promise<void>;
+  restore(): Promise<void>;
+}
+
+const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'LINK', 'META', 'HEAD', 'BR', 'WBR', 'TEMPLATE', 'SOURCE', 'TRACK']);
+const ATOM = new Set(['IMG', 'SVG', 'VIDEO', 'CANVAS', 'IFRAME', 'HR', 'INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'AUDIO', 'OBJECT', 'EMBED', 'METER', 'PROGRESS']);
+const WRAP_RESET = [
+  'margin:0 !important',
+  'padding:0 !important',
+  'border:0 !important',
+  'background:none !important',
+  'box-shadow:none !important',
+  'text-shadow:none !important',
+  'color:inherit !important',
+  'font:inherit !important',
+  'letter-spacing:inherit !important',
+  'line-height:inherit !important',
+  'text-transform:inherit !important',
+  'text-decoration:inherit !important',
+  'white-space:inherit !important',
+].join(';');
+
+type Paint = Record<string, string>;
+
+interface AtomItem {
+  el: HTMLElement;
+  kind: 'atom';
+  opacity: string;
+  exit: number;
+  key: number;
+  seen: boolean;
+}
+
+interface ShellItem {
+  el: HTMLElement;
+  kind: 'shell';
+  from: Paint;
+  to: Paint;
+  exit: number;
+  key: number;
+  seen: boolean;
+}
+
+type Item = AtomItem | ShellItem;
+
+export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeoverSession {
+  const reduce = !options.force && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const duration = options.duration ?? (reduce ? 180 : 800);
+  const sweep = reduce ? 0 : (options.sweep ?? 2600);
+  const coverMs = options.coverMs ?? 420;
+
+  const wrapped = wrapLooseText(document.body);
+  const restoreSheet = layWhiteSheet();
+  const unlockScroll = lockScroll();
+  const releasePointer = blockPointer();
+  const frame = coverWithWhiteFrame();
+  const atoms = collectAtoms(document.documentElement);
+  const shells = collectShells(document.documentElement, atoms);
+  const items: Item[] = [
+    ...atoms.map((el): AtomItem => {
+      const spot = spotOf(el);
+      return {
+        el,
+        kind: 'atom',
+        opacity: getComputedStyle(el).opacity,
+        exit: reduce ? 0 : spot.exit,
+        key: spot.key,
+        seen: spot.seen,
+      };
+    }),
+    ...shells.map((shell): ShellItem => {
+      const spot = spotOf(shell.el);
+      return { ...shell, kind: 'shell', exit: 0, key: spot.key, seen: spot.seen };
+    }),
+  ];
+
+  const anims: Animation[] = [];
+  let restored = false;
+  let coverShown = false;
+  let playing: Promise<void> | null = null;
+  let restoring: Promise<void> | null = null;
+
+  const play = (): Promise<void> => {
+    if (restored) return Promise.resolve();
+    if (playing) return playing;
+    playing = runPlay().finally(() => {
+      playing = null;
+    });
+    return playing;
+  };
+
+  const restore = (): Promise<void> => {
+    if (restoring) return restoring;
+    restored = true;
+    cancel(anims);
+    restoring = runRestore();
+    return restoring;
+  };
+
+  return { play, restore };
+
+  async function runPlay(): Promise<void> {
+    const seen = items.filter((item) => item.seen).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
+    const hidden = items.filter((item) => !item.seen);
+    const gap = seen.length > 1 ? sweep / (seen.length - 1) : 0;
+    for (const item of hidden) playOut(item, { duration: 0, fill: 'forwards' });
+    seen.forEach((item, index) => playOut(item, {
+      duration,
+      delay: index * gap,
+      easing: 'cubic-bezier(0.45, 0, 1, 1)',
+      fill: 'forwards',
+    }));
+    await whenDone(anims, sweep + duration);
+    if (restored) return;
+    await fadeOpacity(frame, 0, 1, coverMs);
+    if (restored) return;
+    coverShown = true;
+    releasePointer();
+  }
+
+  async function runRestore(): Promise<void> {
+    if (playing) await playing.catch(() => undefined);
+    cancel(anims);
+    if (coverShown) await fadeOpacity(frame, 1, 0, coverMs > 0 ? 700 : 0);
+    frame.remove();
+    restoreSheet();
+    unwrap(wrapped);
+    releasePointer();
+    unlockScroll();
+  }
+
+  function playOut(item: Item, timing: KeyframeAnimationOptions): void {
+    if (restored) return;
+    try {
+      const anim = item.kind === 'atom'
+        ? item.el.animate(
+          item.seen ? depart(item.opacity, item.exit) : [{ opacity: item.opacity }, { opacity: '0' }],
+          timing,
+        )
+        : item.el.animate([item.from, item.to], timing);
+      anims.push(anim);
+    } catch {
+      // Older browsers without the Web Animations API keep the page still.
+    }
+  }
+}
+
+function opaque(color: string): boolean {
+  if (!color || color === 'transparent') return false;
+  const match = color.match(/rgba?\(([^)]+)\)/);
+  if (!match) return true;
+  const parts = match[1].split(',').map((part) => parseFloat(part));
+  return parts.length < 4 || parts[3] > 0.01;
+}
+
+function hasBox(el: Element, style?: CSSStyleDeclaration): boolean {
+  style = style || getComputedStyle(el);
+  if (style.display === 'none' || style.display === 'contents') return false;
+  if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+  if (style.contentVisibility === 'hidden') return false;
+  if (style.opacity !== '' && Number(style.opacity) === 0) return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width >= 1 && rect.height >= 1;
+}
+
+function isInline(display: string): boolean {
+  return display === 'inline' || display === 'ruby' || display === 'contents';
+}
+
+function isGrouping(display: string): boolean {
+  return display.includes('flex') || display.includes('grid');
+}
+
+function isTextRun(style: CSSStyleDeclaration, kids: Element[]): boolean {
+  if (isGrouping(style.display)) return false;
+  return kids.every((kid) => isInline(getComputedStyle(kid).display));
+}
+
+function walk(el: Element, visit: (el: Element) => void): void {
+  if (SKIP.has(el.tagName)) return;
+  visit(el);
+  for (const child of el.children) walk(child, visit);
+  if (el.shadowRoot) {
+    for (const child of el.shadowRoot.children) walk(child, visit);
+  }
+}
+
+function wrapLooseText(root: HTMLElement): HTMLElement[] {
+  const created: HTMLElement[] = [];
+  walk(root, (el) => {
+    if (!(el instanceof HTMLElement)) return;
+    if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml') return;
+    if (ATOM.has(el.tagName) || el.closest('svg, math')) return;
+    let hasText = false;
+    let hasBlock = false;
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE && (node.textContent || '').trim()) hasText = true;
+      if (node.nodeType === Node.ELEMENT_NODE && hasBox(node as Element) && !isInline(getComputedStyle(node as Element).display)) {
+        hasBlock = true;
+      }
+    }
+    if (!hasText || !hasBlock) return;
+    const parentDisplay = getComputedStyle(el).display;
+    for (const node of [...el.childNodes]) {
+      if (node.nodeType !== Node.TEXT_NODE || !(node.textContent || '').trim()) continue;
+      const span = document.createElement('span');
+      span.dataset.scenaroWrap = '1';
+      span.style.cssText = WRAP_RESET;
+      if (!isGrouping(parentDisplay)) span.style.setProperty('display', 'inline', 'important');
+      node.parentNode?.insertBefore(span, node);
+      span.appendChild(node);
+      created.push(span);
+    }
+  });
+  return created;
+}
+
+function unwrap(spans: HTMLElement[]): void {
+  for (const span of spans) {
+    const parent = span.parentNode;
+    if (!parent) continue;
+    while (span.firstChild) parent.insertBefore(span.firstChild, span);
+    parent.removeChild(span);
+  }
+}
+
+function collectAtoms(root: Element): HTMLElement[] {
+  const atoms: HTMLElement[] = [];
+  const seenSet = new Set<Element>();
+  const add = (el: HTMLElement) => {
+    if (!seenSet.has(el)) {
+      seenSet.add(el);
+      atoms.push(el);
+    }
+  };
+  const collect = (el: Element) => {
+    if (SKIP.has(el.tagName)) return;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.contentVisibility === 'hidden') return;
+    if (el.tagName === 'SLOT') {
+      for (const child of el.children) collect(child);
+      return;
+    }
+    if (ATOM.has(el.tagName)) {
+      if (el instanceof HTMLElement && hasBox(el, style)) add(el);
+      return;
+    }
+    if (el instanceof HTMLElement && hasBox(el, style)) {
+      const kids = [...el.children].filter((kid) => hasBox(kid));
+      const shadowDraws = !!el.shadowRoot && [...el.shadowRoot.children].some((kid) => !SKIP.has(kid.tagName));
+      if (!shadowDraws && (kids.length === 0 || isTextRun(style, kids))) {
+        add(el);
+        return;
+      }
+    }
+    for (const child of el.children) collect(child);
+    if (el.shadowRoot) {
+      for (const child of el.shadowRoot.children) collect(child);
+    }
+  };
+  collect(root);
+  return atoms;
+}
+
+function shellPaint(style: CSSStyleDeclaration): { from: Paint; to: Paint } | null {
+  const from: Paint = {};
+  const to: Paint = {};
+  const hasImage = !!style.backgroundImage && style.backgroundImage !== 'none';
+  if (opaque(style.backgroundColor) || hasImage) {
+    from.backgroundColor = style.backgroundColor;
+    to.backgroundColor = '#ffffff';
+  }
+  if (hasImage) {
+    from.backgroundImage = style.backgroundImage;
+    to.backgroundImage = 'none';
+  }
+  const borderWidth = parseFloat(style.borderTopWidth) + parseFloat(style.borderRightWidth)
+    + parseFloat(style.borderBottomWidth) + parseFloat(style.borderLeftWidth);
+  if (borderWidth > 0 && opaque(style.borderTopColor)) {
+    from.borderColor = style.borderColor;
+    to.borderColor = '#ffffff';
+  }
+  if (style.boxShadow && style.boxShadow !== 'none') {
+    from.boxShadow = style.boxShadow;
+    to.boxShadow = 'none';
+  }
+  return Object.keys(from).length ? { from, to } : null;
+}
+
+function collectShells(root: Element, atoms: HTMLElement[]): ShellItem[] {
+  const atomSet = new Set<Element>(atoms);
+  const shells: ShellItem[] = [];
+  const collect = (el: Element, insideAtom: boolean) => {
+    if (SKIP.has(el.tagName)) return;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.contentVisibility === 'hidden') return;
+    const isAtom = atomSet.has(el);
+    const isCanvas = el === document.documentElement || el === document.body;
+    if (!insideAtom && !isAtom && !isCanvas && el instanceof HTMLElement && hasBox(el, style)) {
+      const paint = shellPaint(style);
+      if (paint) shells.push({ el, kind: 'shell', exit: 0, key: 0, seen: false, ...paint });
+    }
+    if (isAtom || ATOM.has(el.tagName)) return;
+    for (const child of el.children) collect(child, insideAtom);
+    if (el.shadowRoot) {
+      for (const child of el.shadowRoot.children) collect(child, insideAtom);
+    }
+  };
+  collect(root, false);
+  return shells;
+}
+
+function spotOf(el: Element): { seen: boolean; key: number; exit: number } {
+  const rect = el.getBoundingClientRect();
+  const height = window.innerHeight;
+  const width = window.innerWidth;
+  const visibleW = Math.min(rect.right, width) - Math.max(rect.left, 0);
+  const visibleH = Math.min(rect.bottom, height) - Math.max(rect.top, 0);
+  const mostlyAbove = rect.bottom < 48;
+  const mostlyBelow = rect.top > height - 48;
+  const spansOutside = rect.height > height * 1.25 && (rect.top < -24 || rect.bottom > height + 24);
+  const seen = visibleW > 8 && visibleH > 28 && !mostlyAbove && !mostlyBelow && !spansOutside;
+  const y = Math.min(Math.max(rect.top, 0), height);
+  return { seen, key: Math.floor(y / 34) * 1e7 + Math.max(rect.left, 0), exit: Math.max(72, width - rect.left + 36) };
+}
+
+function depart(opacity: string, exit: number): Keyframe[] {
+  return [
+    { opacity, translate: '0px 0px', offset: 0 },
+    { opacity, translate: `${exit * 0.28}px 0px`, offset: 0.42 },
+    { opacity: '0', translate: `${exit}px 0px`, offset: 1 },
+  ];
+}
+
+function animationEnd(anim: Animation): number {
+  const effect = anim.effect;
+  if (!effect || !('getComputedTiming' in effect)) return 0;
+  try {
+    const timing = effect.getComputedTiming();
+    const delay = Number(timing.delay) || 0;
+    const active = timing.activeDuration != null ? timing.activeDuration : timing.duration;
+    const durationMs = Number(active) || 0;
+    const endDelay = Number(timing.endDelay) || 0;
+    return Math.max(0, delay + durationMs + endDelay);
+  } catch {
+    return 0;
+  }
+}
+
+function whenDone(anims: Animation[], fallbackMs: number): Promise<void> {
+  let end = 0;
+  for (const anim of anims) end = Math.max(end, animationEnd(anim));
+  if (!end) end = fallbackMs || 0;
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, end + 60);
+    const pending = anims.map((anim) => {
+      if (!anim.finished || typeof anim.finished.then !== 'function') return Promise.resolve();
+      return anim.finished.then(() => undefined, () => undefined);
+    });
+    void Promise.all(pending).then(() => {
+      window.clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+function fadeOpacity(el: HTMLElement, from: number, to: number, ms: number): Promise<void> {
+  try {
+    return whenDone([el.animate([{ opacity: from }, { opacity: to }], { duration: ms, easing: 'ease', fill: 'forwards' })], ms);
+  } catch {
+    el.style.opacity = String(to);
+    return Promise.resolve();
+  }
+}
+
+function lockScroll(): () => void {
+  const html = document.documentElement;
+  const body = document.body;
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const gap = Math.max(0, window.innerWidth - html.clientWidth);
+  const saved = {
+    htmlOverflow: html.style.overflow,
+    bodyOverflow: body.style.overflow,
+    bodyPosition: body.style.position,
+    bodyTop: body.style.top,
+    bodyLeft: body.style.left,
+    bodyRight: body.style.right,
+    bodyWidth: body.style.width,
+    bodyPaddingRight: body.style.paddingRight,
+  };
+  const stopPointer = (event: Event) => event.preventDefault();
+  const stopKeys = (event: KeyboardEvent) => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+      event.preventDefault();
+    }
+  };
+  window.addEventListener('wheel', stopPointer, { passive: false, capture: true });
+  window.addEventListener('touchmove', stopPointer, { passive: false, capture: true });
+  window.addEventListener('keydown', stopKeys, { capture: true });
+  html.style.overflow = 'hidden';
+  body.style.overflow = 'hidden';
+  body.style.position = 'fixed';
+  body.style.top = `-${scrollY}px`;
+  body.style.left = `-${scrollX}px`;
+  body.style.right = '0';
+  body.style.width = '100%';
+  if (gap) body.style.paddingRight = `${gap}px`;
+  return () => {
+    window.removeEventListener('wheel', stopPointer, { capture: true });
+    window.removeEventListener('touchmove', stopPointer, { capture: true });
+    window.removeEventListener('keydown', stopKeys, { capture: true });
+    html.style.overflow = saved.htmlOverflow;
+    body.style.overflow = saved.bodyOverflow;
+    body.style.position = saved.bodyPosition;
+    body.style.top = saved.bodyTop;
+    body.style.left = saved.bodyLeft;
+    body.style.right = saved.bodyRight;
+    body.style.width = saved.bodyWidth;
+    body.style.paddingRight = saved.bodyPaddingRight;
+    window.scrollTo(scrollX, scrollY);
+  };
+}
+
+function layWhiteSheet(): () => void {
+  const saved: { el: HTMLElement; background: string; backgroundColor: string; backgroundImage: string }[] = [];
+  for (const el of [document.documentElement, document.body]) {
+    saved.push({
+      el,
+      background: el.style.background,
+      backgroundColor: el.style.backgroundColor,
+      backgroundImage: el.style.backgroundImage,
+    });
+    el.style.setProperty('background-color', '#ffffff', 'important');
+    el.style.setProperty('background-image', 'none', 'important');
+  }
+  let restored = false;
+  return () => {
+    if (restored) return;
+    restored = true;
+    for (const item of saved) {
+      item.el.style.removeProperty('background-color');
+      item.el.style.removeProperty('background-image');
+      if (item.background) item.el.style.background = item.background;
+      if (item.backgroundColor) item.el.style.backgroundColor = item.backgroundColor;
+      if (item.backgroundImage) item.el.style.backgroundImage = item.backgroundImage;
+    }
+  };
+}
+
+function blockPointer(): () => void {
+  const style = document.createElement('style');
+  style.dataset.scenaroPointer = '1';
+  style.textContent = 'html, html * { pointer-events: none !important; cursor: default !important; } [data-scenaro-chrome], [data-scenaro-chrome] * { pointer-events: auto !important; cursor: pointer !important; }';
+  document.documentElement.appendChild(style);
+  const stop = (event: Event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-scenaro-chrome]')) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const types = ['pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerenter', 'pointerleave', 'pointerout', 'pointercancel', 'mouseover', 'mouseenter', 'mouseleave', 'mouseout', 'mousemove', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'dragstart'];
+  for (const type of types) window.addEventListener(type, stop, { capture: true, passive: false });
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const type of types) window.removeEventListener(type, stop, { capture: true });
+    style.remove();
+  };
+}
+
+function coverWithWhiteFrame(): HTMLIFrameElement {
+  const frame = document.createElement('iframe');
+  frame.dataset.scenaroCover = '1';
+  frame.setAttribute('aria-hidden', 'true');
+  frame.setAttribute('tabindex', '-1');
+  frame.srcdoc = "<!DOCTYPE html><html><body style='margin:0;background:#fff'></body></html>";
+  frame.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;border:0;margin:0;padding:0;background:#fff;z-index:2147483646;opacity:0;cursor:default;';
+  frame.style.setProperty('pointer-events', 'none', 'important');
+  document.documentElement.appendChild(frame);
+  return frame;
+}
+
+function cancel(anims: Animation[]): void {
+  for (const anim of anims) {
+    try {
+      anim.cancel();
+    } catch {
+      // Already finished.
+    }
+  }
+}

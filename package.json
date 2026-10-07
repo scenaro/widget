@@ -4,17 +4,21 @@
   "description": "Scenaro Widget for embedding conversation experiences",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && vite build --config vite.widget.config.ts && node scripts/assemble-release.mjs",
     "preview": "vite preview",
     "test": "vitest"
   },
-  "keywords": ["scenaro", "widget", "embed"],
+  "keywords": [
+    "scenaro",
+    "widget",
+    "embed"
+  ],
   "author": "Scenaro",
   "license": "MIT",
   "devDependencies": {
+    "jsdom": "^30.1.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.5"
   }
 }
-

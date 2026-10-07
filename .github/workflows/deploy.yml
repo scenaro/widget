@@ -84,12 +84,20 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          aws s3 sync dist/ s3://scenaro-widget-cdn/ \
-            --delete \
+          # Immutable release bundles. Do not delete older releases.
+          aws s3 sync dist/releases/ s3://scenaro-widget-cdn/releases/ \
             --cache-control "public, max-age=31536000, immutable" \
-            --exclude "runtime/*" \
+            --content-type "text/javascript" \
             --exclude "*.html"
-          
+
+          # Loader and the release index. Short cache, same idea as Stripe.js /v3/.
+          aws s3 cp dist/widget.js s3://scenaro-widget-cdn/widget.js \
+            --cache-control "public, max-age=300" \
+            --content-type "text/javascript"
+          aws s3 cp dist/releases.json s3://scenaro-widget-cdn/releases.json \
+            --cache-control "public, max-age=300" \
+            --content-type "application/json"
+
           # Runtime files with shorter cache
           aws s3 sync dist/runtime/ s3://scenaro-widget-cdn/runtime/ \
             --delete \
@@ -101,6 +109,6 @@ jobs:
           echo "Invalidating CloudFront cache for distribution: ${{ steps.get-cf-id.outputs.distribution_id }}"
           aws cloudfront create-invalidation \
             --distribution-id ${{ steps.get-cf-id.outputs.distribution_id }} \
-            --paths "/*"
+            --paths "/widget.js" "/releases.json"
         continue-on-error: true
 

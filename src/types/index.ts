@@ -41,6 +41,8 @@ export interface CartAddRequest {
   requestId: string;
   data: {
     productId: string | number;
+    /** Shopify variant legacy id. Required to add the variant already in the storefront cart. */
+    variantId?: string | number;
     qty?: number;
   };
 }
@@ -94,10 +96,10 @@ export interface Connector {
   name: string;
   refreshCart(): Promise<void>;
   listCart?(): Promise<any>;
-  addToCart?(params: { productId: string | number; qty?: number }): Promise<any>;
+  addToCart?(params: { productId: string | number; variantId?: string | number; qty?: number }): Promise<any>;
   updateCart?(params: { itemId: string | number; qty: number }): Promise<any>;
   removeCart?(params: { itemId: string | number }): Promise<any>;
-  clearCart?(): Promise<void>;
+  clearCart?(): Promise<any>;
 }
 
 export interface Engine {

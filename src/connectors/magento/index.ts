@@ -1,4 +1,5 @@
 import { Connector } from '../../types';
+import { normalizeMagentoCart, StorefrontCart } from '../cart';
 
 // jQuery interface for Magento AMD loading
 interface MagentoJQuery {
@@ -221,45 +222,46 @@ export const MagentoConnector: Connector = {
     }
   },
 
-  async listCart(): Promise<any> {
+  async listCart(): Promise<StorefrontCart> {
     try {
-      return await cartCRUD.list();
+      return normalizeMagentoCart(await cartCRUD.list());
     } catch (error) {
       console.error('[Scenaro] Error listing cart:', error);
       throw error;
     }
   },
 
-  async addToCart(params: { productId: string | number; qty?: number }): Promise<any> {
+  async addToCart(params: { productId: string | number; qty?: number }): Promise<StorefrontCart> {
     try {
-      return await cartCRUD.add(params);
+      return normalizeMagentoCart(await cartCRUD.add(params));
     } catch (error) {
       console.error('[Scenaro] Error adding to cart:', error);
       throw error;
     }
   },
 
-  async updateCart(params: { itemId: string | number; qty: number }): Promise<any> {
+  async updateCart(params: { itemId: string | number; qty: number }): Promise<StorefrontCart> {
     try {
-      return await cartCRUD.updateQty(params);
+      return normalizeMagentoCart(await cartCRUD.updateQty(params));
     } catch (error) {
       console.error('[Scenaro] Error updating cart item:', error);
       throw error;
     }
   },
 
-  async removeCart(params: { itemId: string | number }): Promise<any> {
+  async removeCart(params: { itemId: string | number }): Promise<StorefrontCart> {
     try {
-      return await cartCRUD.remove(params);
+      return normalizeMagentoCart(await cartCRUD.remove(params));
     } catch (error) {
       console.error('[Scenaro] Error removing cart item:', error);
       throw error;
     }
   },
 
-  async clearCart(): Promise<void> {
+  async clearCart(): Promise<StorefrontCart> {
     try {
       await cartCRUD.clear();
+      return normalizeMagentoCart(await cartCRUD.list());
     } catch (error) {
       console.error('[Scenaro] Error clearing cart:', error);
       throw error;

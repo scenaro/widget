@@ -1,3 +1,5 @@
+import { AppearanceName, appearanceOf, beginPageTakeover, PageTakeoverSession } from './page-takeover';
+import { detectStorefront } from './storefront';
 import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroEventPayload, ScenaroOpenConfig } from './types';
 
 /** Stored overflow values to restore when exiting fullscreen */
@@ -10,7 +12,17 @@ interface WakeLockSentinel {
 
 class ScenaroWidget {
   private publicationId: string;
+  private entries: string[] = [];
+  private appearance: AppearanceName = 'takeover';
+  private scriptEl: HTMLScriptElement | null = null;
   private iframe: HTMLIFrameElement | null = null;
+  private panel: HTMLElement | null = null;
+  private overlay: HTMLElement | null = null;
+  private takeover: PageTakeoverSession | null = null;
+  private closeButton: HTMLButtonElement | null = null;
+  private sessionId = 0;
+  private opening = false;
+  private panelMode: 'docked' | 'full' = 'docked';
   private engine: any = null; // Typed as any because it might be loaded dynamically
   private listeners: Map<string, Function[]> = new Map();
   private metadata: Record<string, any> = {};
@@ -24,20 +36,37 @@ class ScenaroWidget {
   constructor() {
     this.publicationId = this.detectConfig();
     this.init();
+    this.mountLaunchers();
     // Mark as initialized
     (window as any).Scenaro._initialized = true;
   }
 
+  private bindScript(script: HTMLScriptElement): string {
+    this.scriptEl = script;
+    const raw = script.dataset.entries || '';
+    this.entries = raw.split(',').map((entry) => entry.trim()).filter(Boolean);
+    this.appearance = appearanceOf(script.dataset.appearance);
+    return (script.dataset.publicationId || '').trim();
+  }
+
   private detectConfig(): string {
-    // Find the script tag that loaded this widget
-    // data-publication-id contains the publication ID
+    // The executing script is the release bundle. Its src directory is where
+    // engines and connectors are loaded from. The stable loader tag also
+    // carries data-publication-id, so a document-order scan would pick that
+    // one and point engines at the CDN root.
+    const current = document.currentScript;
+    if (current instanceof HTMLScriptElement && current.dataset.publicationId) {
+      const publicationId = this.bindScript(current);
+      if (publicationId) return publicationId;
+    }
+
     const scripts = document.getElementsByTagName('script');
     let publicationId = '';
-    
+
     for (let i = 0; i < scripts.length; i++) {
       const script = scripts[i];
       if (script.dataset.publicationId && script.dataset.publicationId !== '') {
-        publicationId = script.dataset.publicationId;
+        publicationId = this.bindScript(script);
         break;
       }
     }
@@ -69,7 +98,8 @@ class ScenaroWidget {
   }
 
   public async open(config?: ScenaroOpenConfig) {
-    if (this.iframe) return; // Already open
+    if (this.iframe || this.opening) return; // Already open
+    this.opening = true;
 
     // Publication ID: config override or script tag
     const publicationId = (config?.publicationId && config.publicationId.trim() !== '')
@@ -84,23 +114,62 @@ class ScenaroWidget {
     // Emit 'open' event
     this.emit('open');
 
-    await this.createIframe(publicationId);
-    await this.loadEngine(publicationId);
+    try {
+      await this.createIframe(publicationId);
+      if (this.iframe) await this.loadEngine(publicationId);
+    } finally {
+      this.opening = false;
+    }
   }
 
   public close() {
-    if (this.iframe) {
-      this.stopViewportListeners();
-      this.stopWakeLockVisibilityReacquire();
-      this.releaseWakeLock();
-      // Restore parent scrollbars when iframe was attached to body (no container)
-      this.setParentScrollbarsHidden(false);
-      this.isFullscreenAttachment = false;
-      this.iframe.remove();
-      this.iframe = null;
-      // Emit 'close' event
-      this.emit('close');
+    if (!this.iframe && !this.panel && !this.takeover) return;
+    this.sessionId += 1;
+
+    this.stopViewportListeners();
+    this.stopWakeLockVisibilityReacquire();
+    this.releaseWakeLock();
+    this.setParentScrollbarsHidden(false);
+    this.isFullscreenAttachment = false;
+    this.panelMode = 'docked';
+
+    const panel = this.panel;
+    const overlay = this.overlay;
+    const iframe = this.iframe;
+    const takeover = this.takeover;
+    const closeButton = this.closeButton;
+    this.panel = null;
+    this.overlay = null;
+    this.iframe = null;
+    this.takeover = null;
+    this.closeButton = null;
+    this.emit('close');
+
+    if (takeover) {
+      void this.dismissTakeover(takeover, iframe, closeButton);
+      return;
     }
+
+    this.setLaunchersHidden(false);
+
+    if (overlay) {
+      overlay.style.opacity = '0';
+      const removeOverlay = () => overlay.remove();
+      overlay.addEventListener('transitionend', removeOverlay, { once: true });
+      window.setTimeout(removeOverlay, 520);
+    }
+
+    if (panel) {
+      panel.style.transform = 'translateX(100%)';
+      const remove = () => {
+        panel.remove();
+      };
+      panel.addEventListener('transitionend', remove, { once: true });
+      window.setTimeout(remove, 520);
+      return;
+    }
+
+    iframe?.remove();
   }
 
   /** Hide or restore scrollbars on the parent document (html + body) when iframe is fullscreen. */
@@ -128,11 +197,11 @@ class ScenaroWidget {
     return (vv?.height ?? window.innerHeight) || window.innerHeight;
   }
 
-  /** Apply current viewport height to iframe (fullscreen mode only). Call on resize/orientation. */
+  /** Apply current viewport height to the expanded panel. Call on resize/orientation. */
   private applyViewportHeight(): void {
-    if (!this.iframe || !this.isFullscreenAttachment) return;
-    const h = this.getVisibleHeight();
-    this.iframe.style.height = `${h}px`;
+    const height = `${this.getVisibleHeight()}px`;
+    if (this.panel && this.panelMode === 'full') this.panel.style.height = height;
+    if (this.takeover && this.iframe) this.iframe.style.height = height;
   }
 
   /** Attach resize/orientation/visualViewport listeners so fullscreen iframe height tracks visible viewport. */
@@ -225,12 +294,7 @@ class ScenaroWidget {
   }
 
   private detectCMS(): string | null {
-    // Simple CMS detection - can be extended later
-    if (typeof window !== 'undefined' && (window as any).requirejs) {
-      // Very rough heuristic for Magento 2
-      return 'magento';
-    }
-    return null;
+    return detectStorefront();
   }
 
   private adapterLoaded: string | null = null;
@@ -328,8 +392,12 @@ class ScenaroWidget {
       return;
     }
 
-    // Build stable embed URL (CloudFront rewrites /{uuid} to API path)
-    const baseUrl = `https://embed.scenaro.io/${id}`;
+    // data-iframe-url skips embed.scenaro.io. That host sends X-Frame-Options: DENY,
+    // which Chrome shows inside the iframe as "refused to connect".
+    const embedOverride = this.scriptEl?.dataset.iframeUrl;
+    const baseUrl = embedOverride && embedOverride.trim() !== ''
+      ? embedOverride.trim()
+      : `https://embed.scenaro.io/${id}`;
     const url = new URL(baseUrl);
 
     // Add language from metadata if available
@@ -341,29 +409,28 @@ class ScenaroWidget {
     iframe.allow = "microphone *; autoplay *";
     iframe.style.border = 'none';
     iframe.style.zIndex = '2147483647';
+    iframe.style.pointerEvents = 'auto';
+    iframe.style.touchAction = 'manipulation';
 
     // Prefer #scenaro-container so iframe is in-page (not fullscreen). Wait for it if not yet in DOM.
+    const sessionId = this.sessionId;
     const container = await this.getContainerOrWait();
+    if (sessionId !== this.sessionId) {
+      iframe.remove();
+      return;
+    }
     if (container) {
       Object.assign(iframe.style, { width: '100%', height: '100%', display: 'block' });
       container.appendChild(iframe);
-    } else {
-      const visibleHeight = this.getVisibleHeight();
-      Object.assign(iframe.style, {
-        position: 'fixed',
-        top: '0',
-        left: '0',
-        width: '100vw',
-        height: `${visibleHeight}px`,
-      });
-      this.setParentScrollbarsHidden(true);
-      this.isFullscreenAttachment = true;
-      document.body.appendChild(iframe);
       this.iframe = iframe;
-      this.startViewportListeners();
+    } else if (this.appearance === 'panel') {
+      this.mountDockedPanel(iframe);
+      this.iframe = iframe;
+    } else {
+      await this.mountTakeover(iframe, sessionId);
     }
 
-    this.iframe = iframe;
+    if (sessionId !== this.sessionId) return;
     this.acquireWakeLock();
     this.startWakeLockVisibilityReacquire();
   }
@@ -431,7 +498,422 @@ class ScenaroWidget {
   }
 
   private getCDNBaseUrl(): string {
+      const src = this.scriptEl?.src;
+      if (src) {
+        try {
+          const url = new URL(src);
+          return url.origin + url.pathname.replace(/\/[^/]*$/, '');
+        } catch {
+          return 'https://cdn.scenaro.io';
+        }
+      }
       return 'https://cdn.scenaro.io';
+  }
+
+  /** Entries (floating, product, search) come from data-entries on the script tag. */
+  private mountLaunchers() {
+    const start = () => {
+      if (!this.entries.length || !this.publicationId) return;
+      if (this.entries.includes('floating')) this.mountFloatingLauncher();
+      if (this.entries.includes('product')) this.mountProductLauncher();
+      if (this.entries.includes('search')) this.mountSearchLauncher();
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start, { once: true });
+    } else {
+      start();
+    }
+  }
+
+  private mountFloatingLauncher() {
+    const button = this.launcherRoot('floating', this.launcherLabel('floating', 'Conseiller'));
+    if (!button.style.position) {
+      Object.assign(button.style, {
+        position: 'fixed',
+        right: '20px',
+        bottom: '20px',
+        zIndex: '2147483640',
+      });
+    }
+    button.addEventListener('click', () => {
+      void this.open({ metadata: { entry: 'floating', page: location.href } });
+    });
+    document.body.appendChild(button);
+  }
+
+  private mountProductLauncher() {
+    const shopifyPage = (window as Window & { ShopifyAnalytics?: { meta?: { page?: { pageType?: string } } } }).ShopifyAnalytics?.meta?.page?.pageType;
+    const onProduct =
+      document.body.classList.contains('catalog-product-view') ||
+      document.body.classList.contains('template-product') ||
+      shopifyPage === 'product';
+    if (!onProduct) return;
+
+    const anchor =
+      document.querySelector<HTMLElement>('#product-addtocart-button') ||
+      document.querySelector<HTMLElement>('form[action*="/cart/add"] [type="submit"]');
+    if (!anchor?.parentElement) {
+      console.warn('[Scenaro] Product page found, add-to-cart anchor missing');
+      return;
+    }
+
+    const button = this.launcherRoot('product', this.launcherLabel('product', 'Demander conseil'));
+    button.addEventListener('click', () => {
+      const form = document.querySelector<HTMLElement>('#product_addtocart_form, form[action*="/cart/add"]');
+      void this.open({
+        metadata: {
+          entry: 'product',
+          page: location.href,
+          product_sku: form?.getAttribute('data-product-sku') || undefined,
+        },
+      });
+    });
+    if (this.scriptEl?.dataset.productPlacement === 'after') {
+      anchor.insertAdjacentElement('afterend', button);
+    } else {
+      anchor.parentElement.insertBefore(button, anchor);
+    }
+  }
+
+  private mountSearchLauncher() {
+    const form =
+      document.querySelector<HTMLElement>('#search_mini_form') ||
+      document.querySelector<HTMLElement>('form[action*="/search"]');
+    if (!form) {
+      console.warn('[Scenaro] Search entry enabled, search form not found');
+      return;
+    }
+
+    const button = this.createLauncherButton(this.launcherLabel('search', 'Scenaro'), 'search');
+    button.dataset.scenaroLauncher = 'search';
+    button.style.marginLeft = '8px';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      const input = form.querySelector<HTMLInputElement>('input[type="search"], input[name="q"]');
+      void this.open({
+        metadata: {
+          entry: 'search',
+          page: location.href,
+          query: input?.value || undefined,
+        },
+      });
+    });
+    form.appendChild(button);
+  }
+
+  private launcherLabel(kind: 'floating' | 'product' | 'search', fallback: string): string {
+    const value = kind === 'floating'
+      ? this.scriptEl?.dataset.floatingLabel
+      : kind === 'product'
+        ? this.scriptEl?.dataset.productLabel
+        : this.scriptEl?.dataset.searchLabel;
+    return value && value.trim() !== '' ? value.trim() : fallback;
+  }
+
+  /** Custom markup from <template id="scenaro-button-floating|product">, otherwise the integrated button. */
+  private launcherRoot(kind: 'floating' | 'product', label: string): HTMLElement {
+    const template = document.getElementById(`scenaro-button-${kind}`) as HTMLTemplateElement | null;
+    const custom = template?.content?.firstElementChild;
+    if (custom) {
+      const node = custom.cloneNode(true) as HTMLElement;
+      node.dataset.scenaroLauncher = kind;
+      return node;
+    }
+    return this.createLauncherButton(label, kind);
+  }
+
+  private createLauncherButton(label: string, kind: 'floating' | 'product' | 'search'): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.dataset.scenaroLauncher = kind;
+    const onMagentoProduct = kind === 'product' && detectStorefront() === 'magento';
+    if (onMagentoProduct) {
+      button.className = 'action secondary';
+      button.style.width = '100%';
+      button.style.marginBottom = '12px';
+      this.matchStoreButton(button, kind);
+      return button;
+    }
+    Object.assign(button.style, {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '44px',
+      padding: '0 18px',
+      border: '1px solid rgba(0, 0, 0, 0.2)',
+      borderRadius: '2px',
+      background: kind === 'floating' ? '#fff' : 'transparent',
+      color: 'inherit',
+      font: 'inherit',
+      fontWeight: '600',
+      cursor: 'pointer',
+      width: kind === 'product' ? '100%' : 'auto',
+      margin: kind === 'product' ? '0 0 12px' : '0',
+      boxShadow: kind === 'floating' ? '0 8px 24px rgba(0, 0, 0, 0.12)' : 'none',
+    });
+    this.matchStoreButton(button, kind);
+    return button;
+  }
+
+  /** Copy the live add-to-cart button so the launcher matches the theme without filled-in fields. */
+  private matchStoreButton(button: HTMLButtonElement, kind: 'floating' | 'product' | 'search') {
+    if (this.scriptEl?.dataset.matchTheme === '0') return;
+    const source = this.findStoreButton(button);
+    if (!source) return;
+    const style = getComputedStyle(source);
+    const keys = [
+      'backgroundColor',
+      'color',
+      'borderRadius',
+      'borderTopWidth',
+      'borderRightWidth',
+      'borderBottomWidth',
+      'borderLeftWidth',
+      'borderTopStyle',
+      'borderRightStyle',
+      'borderBottomStyle',
+      'borderLeftStyle',
+      'borderTopColor',
+      'borderRightColor',
+      'borderBottomColor',
+      'borderLeftColor',
+      'fontFamily',
+      'fontWeight',
+      'fontSize',
+      'letterSpacing',
+      'textTransform',
+      'paddingTop',
+      'paddingBottom',
+      'paddingLeft',
+      'paddingRight',
+      'minHeight',
+      'lineHeight',
+    ] as const;
+    for (const key of keys) {
+      button.style[key] = style[key];
+    }
+    if (style.backgroundImage && style.backgroundImage !== 'none') {
+      button.style.backgroundImage = style.backgroundImage;
+    }
+    if (kind === 'product') {
+      button.style.width = '100%';
+      button.style.marginBottom = '12px';
+    }
+  }
+
+  private findStoreButton(except: HTMLElement): HTMLElement | null {
+    const selectors = [
+      '#product-addtocart-button',
+      'form[action*="/cart/add"] button[type="submit"]',
+      'button[name="add"]',
+      '.product-form__submit',
+      '.action.primary',
+    ];
+    for (const selector of selectors) {
+      const nodes = document.querySelectorAll<HTMLElement>(selector);
+      for (const node of nodes) {
+        if (node !== except && !node.dataset.scenaroLauncher) return node;
+      }
+    }
+    return null;
+  }
+
+  private setLaunchersHidden(hidden: boolean) {
+    document.querySelectorAll<HTMLElement>('[data-scenaro-launcher]').forEach((node) => {
+      node.style.visibility = hidden ? 'hidden' : '';
+    });
+  }
+
+  /** Page blocks leave, then the experience iframe fills the window. */
+  private async mountTakeover(iframe: HTMLIFrameElement, sessionId: number): Promise<void> {
+    this.setLaunchersHidden(true);
+    const session = beginPageTakeover();
+    if (sessionId !== this.sessionId) {
+      await session.restore();
+      return;
+    }
+    this.takeover = session;
+    this.iframe = iframe;
+    this.isFullscreenAttachment = true;
+    Object.assign(iframe.style, {
+      position: 'fixed',
+      inset: '0',
+      width: '100%',
+      height: `${this.getVisibleHeight()}px`,
+      margin: '0',
+      opacity: '0',
+      background: '#fff',
+      transition: 'opacity 420ms ease',
+    });
+    const button = this.buildCloseButton();
+    this.closeButton = button;
+    document.documentElement.appendChild(iframe);
+    document.documentElement.appendChild(button);
+    this.startViewportListeners();
+    await session.play();
+    if (sessionId !== this.sessionId || this.takeover !== session) return;
+    iframe.style.opacity = '1';
+  }
+
+  private async dismissTakeover(
+    session: PageTakeoverSession,
+    iframe: HTMLIFrameElement | null,
+    button: HTMLButtonElement | null,
+  ): Promise<void> {
+    if (iframe) {
+      iframe.style.opacity = '0';
+      await new Promise((resolve) => window.setTimeout(resolve, 280));
+    }
+    await session.restore();
+    iframe?.remove();
+    button?.remove();
+    this.setLaunchersHidden(false);
+  }
+
+  private buildCloseButton(): HTMLButtonElement {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.dataset.scenaroChrome = '1';
+    close.setAttribute('aria-label', 'Fermer Scenaro');
+    close.textContent = '×';
+    Object.assign(close.style, {
+      position: 'fixed',
+      top: '16px',
+      left: '16px',
+      zIndex: '2147483647',
+      width: '40px',
+      height: '40px',
+      border: 'none',
+      borderRadius: '999px',
+      background: '#111',
+      color: '#fff',
+      font: '400 28px/1 system-ui, sans-serif',
+      cursor: 'pointer',
+    });
+    close.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.close();
+    });
+    return close;
+  }
+
+  /** Right-hand panel. The experience is already full-screen wide and clipped until a click. */
+  private mountDockedPanel(iframe: HTMLIFrameElement) {
+    const overlay = document.createElement('div');
+    overlay.id = 'scenaro-overlay';
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      inset: '0',
+      display: 'block',
+      background: 'rgba(0, 0, 0, 0.5)',
+      zIndex: '2147483645',
+      opacity: '0',
+      transition: 'opacity 480ms cubic-bezier(0.22, 1, 0.36, 1)',
+    });
+    // Dawn (and similar themes) set `div:empty { display: none }`.
+    overlay.appendChild(document.createElement('span'));
+    overlay.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.panelMode !== 'full') this.close();
+    });
+    document.body.appendChild(overlay);
+    this.overlay = overlay;
+
+    const panel = document.createElement('aside');
+    panel.id = 'scenaro-panel';
+    panel.setAttribute('aria-label', 'Scenaro');
+    Object.assign(panel.style, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      width: '100%',
+      height: '100%',
+      zIndex: '2147483646',
+      background: '#fff',
+      boxShadow: '-24px 0 64px rgba(0, 0, 0, 0.35)',
+      transform: 'translateX(100%)',
+      transition: 'transform 480ms cubic-bezier(0.22, 1, 0.36, 1)',
+      willChange: 'transform',
+    });
+
+    Object.assign(iframe.style, {
+      position: 'absolute',
+      inset: '0',
+      width: '100%',
+      height: '100%',
+      zIndex: '0',
+      // The docked iframe must not take the click. The catcher expands the panel first.
+      pointerEvents: 'none',
+    });
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Fermer Scenaro');
+    close.textContent = '×';
+    Object.assign(close.style, {
+      position: 'absolute',
+      top: '16px',
+      left: '16px',
+      zIndex: '2',
+      width: '40px',
+      height: '40px',
+      border: 'none',
+      borderRadius: '999px',
+      background: '#111',
+      color: '#fff',
+      font: '400 28px/1 system-ui, sans-serif',
+      cursor: 'pointer',
+    });
+    close.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.close();
+    });
+
+    const catcher = document.createElement('div');
+    Object.assign(catcher.style, {
+      position: 'absolute',
+      inset: '0',
+      zIndex: '1',
+      display: 'block',
+      cursor: 'pointer',
+      background: 'transparent',
+    });
+    // Not :empty, so theme rules like Dawn's `div:empty { display: none }` cannot hide it.
+    catcher.appendChild(document.createElement('span'));
+    catcher.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.expandPanel(catcher);
+    });
+
+    panel.append(iframe, catcher, close);
+    document.body.appendChild(panel);
+    this.panel = panel;
+    this.panelMode = 'docked';
+    this.setLaunchersHidden(true);
+    this.setParentScrollbarsHidden(true);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        panel.style.transform = 'translateX(33.333%)';
+        overlay.style.opacity = '1';
+      });
+    });
+  }
+
+  private expandPanel(catcher: HTMLElement) {
+    if (!this.panel || this.panelMode === 'full') return;
+    this.panelMode = 'full';
+    this.isFullscreenAttachment = true;
+    if (this.iframe) this.iframe.style.pointerEvents = 'auto';
+    this.panel.style.transform = 'translateX(0%)';
+    catcher.remove();
+    const panel = this.panel;
+    panel.addEventListener('transitionend', () => {
+      if (this.panel === panel && this.panelMode === 'full') this.startViewportListeners();
+    }, { once: true });
   }
 
   private handleMessage(event: MessageEvent) {
