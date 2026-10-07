@@ -67,17 +67,14 @@ type Item = AtomItem | ShellItem;
 
 export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeoverSession {
   const reduce = !options.force && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const duration = options.duration ?? (reduce ? 180 : 1100);
-  const sweep = reduce ? 0 : (options.sweep ?? 4200);
+  const duration = options.duration ?? (reduce ? 180 : 640);
+  const sweep = reduce ? 0 : (options.sweep ?? 1500);
   const coverMs = options.coverMs ?? 220;
   const holdMs = options.holdMs ?? 2000;
   const overlayMs = options.duration === 0 && options.sweep === 0 ? 0 : (reduce ? 0 : 180);
 
   const wrapped = wrapLooseText(document.body);
   const restoreSheet = layWhiteSheet();
-  const unlockScroll = lockScroll();
-  const releasePointer = blockPointer();
-  const frame = coverWithWhiteFrame();
   const atoms = collectAtoms(document.documentElement);
   const shells = collectShells(document.documentElement, atoms);
   const items: Item[] = [
@@ -97,6 +94,9 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
       return { ...shell, kind: 'shell', exit: 0, key: spot.key, seen: spot.seen };
     }),
   ];
+  const unlockScroll = lockScroll();
+  const releasePointer = blockPointer();
+  const frame = coverWithWhiteFrame();
 
   const anims: Animation[] = [];
   let restored = false;
@@ -387,12 +387,11 @@ function spotOf(el: Element): { seen: boolean; key: number; exit: number } {
   const rect = el.getBoundingClientRect();
   const height = window.innerHeight;
   const width = window.innerWidth;
-  const midY = rect.top + rect.height / 2;
   const visibleW = Math.min(rect.right, width) - Math.max(rect.left, 0);
   const visibleH = Math.min(rect.bottom, height) - Math.max(rect.top, 0);
-  const spansOutside = rect.height > height * 1.25 && (rect.top < -24 || rect.bottom > height + 24);
-  const seen = visibleW > 8 && visibleH > 28 && midY >= -24 && midY <= height + 24 && !spansOutside;
-  const row = Math.floor(Math.max(midY, 0) / 34);
+  const seen = rect.width >= 1 && rect.height >= 1 && visibleW >= 1 && visibleH >= 1;
+  const y = Math.min(Math.max(rect.top, 0), height);
+  const row = Math.floor(y / 34);
   return { seen, key: row * 1e7 + Math.max(rect.left, 0), exit: Math.max(72, width - rect.left + 36) };
 }
 
