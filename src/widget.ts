@@ -789,25 +789,34 @@ class ScenaroWidget {
     this.setLaunchersHidden(false);
   }
 
-  private buildCloseButton(): HTMLButtonElement {
+  private buildCloseButton(position: 'fixed' | 'absolute' = 'fixed'): HTMLButtonElement {
     const close = document.createElement('button');
     close.type = 'button';
     close.dataset.scenaroChrome = '1';
     close.setAttribute('aria-label', 'Fermer Scenaro');
-    close.textContent = '×';
+    close.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false" style="display:block"><path d="M4.25 4.25 L11.75 11.75 M11.75 4.25 L4.25 11.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
     Object.assign(close.style, {
-      position: 'fixed',
+      position,
       top: '16px',
       left: '16px',
-      zIndex: '2147483647',
-      width: '40px',
-      height: '40px',
-      border: 'none',
+      zIndex: position === 'fixed' ? '2147483647' : '2',
+      width: '36px',
+      height: '36px',
+      margin: '0',
+      padding: '0',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      boxSizing: 'border-box',
+      border: '0',
       borderRadius: '999px',
-      background: '#111',
-      color: '#fff',
-      font: '400 28px/1 system-ui, sans-serif',
+      background: '#fff',
+      color: '#1a1820',
+      boxShadow: '0 0 0 1px rgba(26, 24, 32, 0.08), 0 8px 20px rgba(26, 24, 32, 0.12)',
       cursor: 'pointer',
+      lineHeight: '0',
+      appearance: 'none',
+      WebkitAppearance: 'none',
     });
     close.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -866,28 +875,7 @@ class ScenaroWidget {
       pointerEvents: 'none',
     });
 
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.setAttribute('aria-label', 'Fermer Scenaro');
-    close.textContent = '×';
-    Object.assign(close.style, {
-      position: 'absolute',
-      top: '16px',
-      left: '16px',
-      zIndex: '2',
-      width: '40px',
-      height: '40px',
-      border: 'none',
-      borderRadius: '999px',
-      background: '#111',
-      color: '#fff',
-      font: '400 28px/1 system-ui, sans-serif',
-      cursor: 'pointer',
-    });
-    close.addEventListener('click', (event) => {
-      event.stopPropagation();
-      this.close();
-    });
+    const close = this.buildCloseButton('absolute');
 
     const catcher = document.createElement('div');
     Object.assign(catcher.style, {
