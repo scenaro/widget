@@ -549,7 +549,7 @@ function sleep(ms: number): Promise<void> {
 function coverDocument(): string {
   return `<!DOCTYPE html><html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@800&display=swap"><style>
     html,body{margin:0;height:100%;background:#fff;color:#1a1820;}
-    body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px;padding:32px;font-family:Sora,Inter,system-ui,sans-serif;}
+    body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:32px;font-family:Sora,Inter,system-ui,sans-serif;}
     .brand{display:flex;align-items:center;justify-content:center;gap:.2em;font-size:32px;font-weight:800;letter-spacing:-.04em;line-height:1;opacity:0;transform:translateY(12px);}
     .brand svg{width:.92em;height:.92em;display:block;flex:none;transform:translateY(.04em);}
     .brand span{line-height:1;}
