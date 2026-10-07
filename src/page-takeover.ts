@@ -15,10 +15,12 @@ export interface PageTakeoverOptions {
   duration?: number;
   sweep?: number;
   coverMs?: number;
+  holdMs?: number;
 }
 
 export interface PageTakeoverSession {
   play(): Promise<void>;
+  fadeCoverOut(): Promise<void>;
   restore(): Promise<void>;
 }
 
@@ -68,6 +70,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   const duration = options.duration ?? (reduce ? 180 : 420);
   const sweep = reduce ? 0 : (options.sweep ?? 900);
   const coverMs = options.coverMs ?? 220;
+  const holdMs = options.holdMs ?? 720;
 
   const wrapped = wrapLooseText(document.body);
   const restoreSheet = layWhiteSheet();
@@ -117,7 +120,12 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     return restoring;
   };
 
-  return { play, restore };
+  const fadeCoverOut = (): Promise<void> => {
+    coverShown = false;
+    return fadeOpacity(frame, 1, 0, coverMs);
+  };
+
+  return { play, fadeCoverOut, restore };
 
   async function runPlay(): Promise<void> {
     const seen = items.filter((item) => item.seen).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
@@ -136,6 +144,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     if (restored) return;
     coverShown = true;
     releasePointer();
+    if (holdMs > 0) await sleep(holdMs);
   }
 
   async function runRestore(): Promise<void> {
@@ -490,12 +499,34 @@ function blockPointer(): () => void {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function coverDocument(): string {
+  return `<!DOCTYPE html><html><head><style>
+    html,body{margin:0;height:100%;background:#fff;}
+    body{display:flex;align-items:center;justify-content:center;gap:18px;font-family:Inter,system-ui,sans-serif;color:#1a1820;}
+    svg{width:64px;height:64px;display:block;}
+    span{font-size:40px;font-weight:520;letter-spacing:-0.035em;line-height:1;}
+  </style></head><body>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+      <defs><linearGradient id="ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#1a1820" stop-opacity="0.05"/>
+        <stop offset="1" stop-color="#1a1820" stop-opacity="1"/>
+      </linearGradient></defs>
+      <path fill="url(#ring)" fill-rule="evenodd" d="M128 32a96 96 0 1 1 0 192 96 96 0 0 1 0-192Zm0 32a64 64 0 1 0 0 128 64 64 0 0 0 0-128Z"/>
+    </svg>
+    <span>Scenaro</span>
+  </body></html>`;
+}
+
 function coverWithWhiteFrame(): HTMLIFrameElement {
   const frame = document.createElement('iframe');
   frame.dataset.scenaroCover = '1';
   frame.setAttribute('aria-hidden', 'true');
   frame.setAttribute('tabindex', '-1');
-  frame.srcdoc = "<!DOCTYPE html><html><body style='margin:0;background:#fff'></body></html>";
+  frame.srcdoc = coverDocument();
   frame.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;border:0;margin:0;padding:0;background:#fff;z-index:2147483646;opacity:0;cursor:default;';
   frame.style.setProperty('pointer-events', 'none', 'important');
   document.documentElement.appendChild(frame);

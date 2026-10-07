@@ -29,7 +29,7 @@ describe('beginPageTakeover', () => {
     stubBox(paragraph);
     stubBox(card);
 
-    const session = beginPageTakeover({ duration: 0, sweep: 0, coverMs: 0, force: true });
+    const session = beginPageTakeover({ duration: 0, sweep: 0, coverMs: 0, holdMs: 0, force: true });
     const experience = document.createElement('iframe');
     experience.id = 'scenaro-iframe';
     document.documentElement.appendChild(experience);

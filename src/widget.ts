@@ -754,6 +754,7 @@ class ScenaroWidget {
     await session.play();
     if (sessionId !== this.sessionId || this.takeover !== session) return;
     iframe.style.opacity = '1';
+    void session.fadeCoverOut();
   }
 
   private async dismissTakeover(
