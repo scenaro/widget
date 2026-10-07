@@ -67,8 +67,8 @@ type Item = AtomItem | ShellItem;
 
 export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeoverSession {
   const reduce = !options.force && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const duration = options.duration ?? (reduce ? 180 : 420);
-  const sweep = reduce ? 0 : (options.sweep ?? 900);
+  const duration = options.duration ?? (reduce ? 180 : 1100);
+  const sweep = reduce ? 0 : (options.sweep ?? 4200);
   const coverMs = options.coverMs ?? 220;
   const holdMs = options.holdMs ?? 2000;
   const overlayMs = options.duration === 0 && options.sweep === 0 ? 0 : (reduce ? 0 : 180);
@@ -131,17 +131,8 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
 
   async function runPlay(): Promise<void> {
     removeOverlayClear = clearPageOverlays(overlayMs);
-    const overlayAnims: Animation[] = [];
-    for (const item of items) {
-      if (item.kind !== 'shell') continue;
-      const anim = playOut(item, { duration: overlayMs, easing: 'ease', fill: 'forwards' });
-      if (anim) overlayAnims.push(anim);
-    }
-    await whenDone(overlayAnims, overlayMs);
-    if (restored) return;
-
-    const seen = items.filter((item) => item.kind === 'atom' && item.seen).sort((a, b) => a.key - b.key);
-    const hidden = items.filter((item) => item.kind === 'atom' && !item.seen);
+    const seen = items.filter((item) => item.seen).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
+    const hidden = items.filter((item) => !item.seen);
     const gap = seen.length > 1 ? sweep / (seen.length - 1) : 0;
     for (const item of hidden) playOut(item, { duration: 0, fill: 'forwards' });
     seen.forEach((item, index) => playOut(item, {
@@ -313,7 +304,7 @@ function shellPaint(style: CSSStyleDeclaration): { from: Paint; to: Paint } | nu
   const hasImage = !!style.backgroundImage && style.backgroundImage !== 'none';
   if (opaque(style.backgroundColor) || hasImage) {
     from.backgroundColor = style.backgroundColor;
-    to.backgroundColor = '#ffffff';
+    to.backgroundColor = 'transparent';
   }
   if (hasImage) {
     from.backgroundImage = style.backgroundImage;
@@ -323,7 +314,7 @@ function shellPaint(style: CSSStyleDeclaration): { from: Paint; to: Paint } | nu
     + parseFloat(style.borderBottomWidth) + parseFloat(style.borderLeftWidth);
   if (borderWidth > 0 && opaque(style.borderTopColor)) {
     from.borderColor = style.borderColor;
-    to.borderColor = '#ffffff';
+    to.borderColor = 'transparent';
   }
   if (style.boxShadow && style.boxShadow !== 'none') {
     from.boxShadow = style.boxShadow;
@@ -396,14 +387,13 @@ function spotOf(el: Element): { seen: boolean; key: number; exit: number } {
   const rect = el.getBoundingClientRect();
   const height = window.innerHeight;
   const width = window.innerWidth;
+  const midY = rect.top + rect.height / 2;
   const visibleW = Math.min(rect.right, width) - Math.max(rect.left, 0);
   const visibleH = Math.min(rect.bottom, height) - Math.max(rect.top, 0);
-  const mostlyAbove = rect.bottom < 48;
-  const mostlyBelow = rect.top > height - 48;
   const spansOutside = rect.height > height * 1.25 && (rect.top < -24 || rect.bottom > height + 24);
-  const seen = visibleW > 8 && visibleH > 28 && !mostlyAbove && !mostlyBelow && !spansOutside;
-  const y = Math.min(Math.max(rect.top, 0), height);
-  return { seen, key: Math.floor(y / 34) * 1e7 + Math.max(rect.left, 0), exit: Math.max(72, width - rect.left + 36) };
+  const seen = visibleW > 8 && visibleH > 28 && midY >= -24 && midY <= height + 24 && !spansOutside;
+  const row = Math.floor(Math.max(midY, 0) / 34);
+  return { seen, key: row * 1e7 + Math.max(rect.left, 0), exit: Math.max(72, width - rect.left + 36) };
 }
 
 function depart(opacity: string, exit: number): Keyframe[] {
