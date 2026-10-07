@@ -744,7 +744,7 @@ class ScenaroWidget {
       margin: '0',
       opacity: '0',
       background: '#fff',
-      transition: 'opacity 420ms ease',
+      transition: 'opacity 220ms ease',
     });
     const button = this.buildCloseButton();
     this.closeButton = button;
@@ -763,7 +763,7 @@ class ScenaroWidget {
   ): Promise<void> {
     if (iframe) {
       iframe.style.opacity = '0';
-      await new Promise((resolve) => window.setTimeout(resolve, 280));
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
     }
     await session.restore();
     iframe?.remove();

@@ -65,9 +65,9 @@ type Item = AtomItem | ShellItem;
 
 export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeoverSession {
   const reduce = !options.force && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const duration = options.duration ?? (reduce ? 180 : 800);
-  const sweep = reduce ? 0 : (options.sweep ?? 2600);
-  const coverMs = options.coverMs ?? 420;
+  const duration = options.duration ?? (reduce ? 180 : 420);
+  const sweep = reduce ? 0 : (options.sweep ?? 900);
+  const coverMs = options.coverMs ?? 220;
 
   const wrapped = wrapLooseText(document.body);
   const restoreSheet = layWhiteSheet();
@@ -141,7 +141,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   async function runRestore(): Promise<void> {
     if (playing) await playing.catch(() => undefined);
     cancel(anims);
-    if (coverShown) await fadeOpacity(frame, 1, 0, coverMs > 0 ? 700 : 0);
+    if (coverShown) await fadeOpacity(frame, 1, 0, coverMs > 0 ? 280 : 0);
     frame.remove();
     restoreSheet();
     unwrap(wrapped);
