@@ -557,12 +557,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 function coverDocument(): string {
-  return `<!DOCTYPE html><html><head><style>
+  return `<!DOCTYPE html><html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@800&display=swap"><style>
     html,body{margin:0;height:100%;background:#fff;color:#1a1820;}
-    body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px;padding:32px;font-family:Inter,system-ui,sans-serif;}
-    .brand{display:flex;align-items:center;justify-content:center;gap:14px;opacity:0;transform:translateY(12px);}
-    svg{width:44px;height:44px;display:block;}
-    .brand span{font-size:34px;font-weight:520;letter-spacing:-.04em;line-height:1;}
+    body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px;padding:32px;font-family:Sora,Inter,system-ui,sans-serif;}
+    .brand{display:flex;align-items:center;justify-content:center;gap:.2em;font-size:32px;font-weight:800;letter-spacing:-.04em;line-height:1;opacity:0;transform:translateY(12px);}
+    .brand svg{width:.92em;height:.92em;display:block;flex:none;transform:translateY(.04em);}
+    .brand span{line-height:1;}
     .status{display:flex;flex-direction:column;align-items:center;gap:14px;opacity:0;transform:translateY(12px);}
     .status p{margin:0;font-size:13px;letter-spacing:.04em;color:#8a847c;}
     .track{width:148px;height:2px;border-radius:999px;background:#eceae6;overflow:hidden;}
@@ -574,7 +574,7 @@ function coverDocument(): string {
     @keyframes scenaro-load{to{width:100%;}}
   </style></head><body>
     <div class="brand">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="32 32 192 192" fill="none" aria-hidden="true">
         <defs><linearGradient id="ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse">
           <stop offset="0" stop-color="#1a1820" stop-opacity="0.05"/>
           <stop offset="1" stop-color="#1a1820" stop-opacity="1"/>
