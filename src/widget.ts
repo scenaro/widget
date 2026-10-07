@@ -10,6 +10,20 @@ interface WakeLockSentinel {
   release(): Promise<void>;
 }
 
+/** Resolves on the experience iframe's load, or after timeoutMs so the cover never waits forever. */
+function whenIframeReady(iframe: HTMLIFrameElement, timeoutMs = 10000): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    iframe.addEventListener('load', finish, { once: true });
+    window.setTimeout(finish, timeoutMs);
+  });
+}
+
 class ScenaroWidget {
   private publicationId: string;
   private entries: string[] = [];
@@ -748,10 +762,13 @@ class ScenaroWidget {
     });
     const button = this.buildCloseButton();
     this.closeButton = button;
+    const ready = whenIframeReady(iframe);
     document.documentElement.appendChild(iframe);
     document.documentElement.appendChild(button);
     this.startViewportListeners();
     await session.play();
+    if (sessionId !== this.sessionId || this.takeover !== session) return;
+    await ready;
     if (sessionId !== this.sessionId || this.takeover !== session) return;
     iframe.style.opacity = '1';
     void session.fadeCoverOut();

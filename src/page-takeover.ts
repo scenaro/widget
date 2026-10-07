@@ -70,7 +70,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   const duration = options.duration ?? (reduce ? 180 : 420);
   const sweep = reduce ? 0 : (options.sweep ?? 900);
   const coverMs = options.coverMs ?? 220;
-  const holdMs = options.holdMs ?? 720;
+  const holdMs = options.holdMs ?? 2000;
 
   const wrapped = wrapLooseText(document.body);
   const restoreSheet = layWhiteSheet();
@@ -144,6 +144,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     if (restored) return;
     coverShown = true;
     releasePointer();
+    startCoverLoader(frame, holdMs);
     if (holdMs > 0) await sleep(holdMs);
   }
 
@@ -505,20 +506,49 @@ function sleep(ms: number): Promise<void> {
 
 function coverDocument(): string {
   return `<!DOCTYPE html><html><head><style>
-    html,body{margin:0;height:100%;background:#fff;}
-    body{display:flex;align-items:center;justify-content:center;gap:18px;font-family:Inter,system-ui,sans-serif;color:#1a1820;}
-    svg{width:64px;height:64px;display:block;}
-    span{font-size:40px;font-weight:520;letter-spacing:-0.035em;line-height:1;}
+    html,body{margin:0;height:100%;background:#fff;color:#1a1820;}
+    body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:64px;padding:32px;font-family:Inter,system-ui,sans-serif;}
+    .lead{margin:0 0 22px;font-size:15px;font-weight:450;letter-spacing:.01em;text-align:center;color:#6f6a63;}
+    .brand{display:flex;align-items:center;justify-content:center;gap:14px;}
+    svg{width:44px;height:44px;display:block;}
+    .brand span{font-size:34px;font-weight:520;letter-spacing:-.04em;line-height:1;}
+    .status{display:flex;flex-direction:column;align-items:center;gap:14px;}
+    .status p{margin:0;font-size:13px;letter-spacing:.04em;color:#8a847c;}
+    .track{width:148px;height:2px;border-radius:999px;background:#eceae6;overflow:hidden;}
+    .bar{height:100%;width:0;border-radius:inherit;background:#1a1820;animation:scenaro-load 2s cubic-bezier(.4,0,.2,1) forwards;animation-play-state:paused;}
+    .run .bar{animation-play-state:running;}
+    @keyframes scenaro-load{to{width:100%;}}
   </style></head><body>
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" aria-hidden="true">
-      <defs><linearGradient id="ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stop-color="#1a1820" stop-opacity="0.05"/>
-        <stop offset="1" stop-color="#1a1820" stop-opacity="1"/>
-      </linearGradient></defs>
-      <path fill="url(#ring)" fill-rule="evenodd" d="M128 32a96 96 0 1 1 0 192 96 96 0 0 1 0-192Zm0 32a64 64 0 1 0 0 128 64 64 0 0 0 0-128Z"/>
-    </svg>
-    <span>Scenaro</span>
+    <div>
+      <p class="lead">Une expérience propulsée par</p>
+      <div class="brand">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+          <defs><linearGradient id="ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#1a1820" stop-opacity="0.05"/>
+            <stop offset="1" stop-color="#1a1820" stop-opacity="1"/>
+          </linearGradient></defs>
+          <path fill="url(#ring)" fill-rule="evenodd" d="M128 32a96 96 0 1 1 0 192 96 96 0 0 1 0-192Zm0 32a64 64 0 1 0 0 128 64 64 0 0 0 0-128Z"/>
+        </svg>
+        <span>scenaro</span>
+      </div>
+    </div>
+    <div class="status">
+      <p>Chargement en cours</p>
+      <div class="track"><div class="bar"></div></div>
+    </div>
   </body></html>`;
+}
+
+function startCoverLoader(frame: HTMLIFrameElement, ms: number): void {
+  const arm = () => {
+    const body = frame.contentDocument?.body;
+    if (!body) return;
+    const bar = body.querySelector('.bar');
+    if (bar instanceof HTMLElement && ms > 0) bar.style.animationDuration = `${ms}ms`;
+    body.classList.add('run');
+  };
+  if (frame.contentDocument?.body) arm();
+  else frame.addEventListener('load', arm, { once: true });
 }
 
 function coverWithWhiteFrame(): HTMLIFrameElement {

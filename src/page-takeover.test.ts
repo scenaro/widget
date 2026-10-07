@@ -30,6 +30,10 @@ describe('beginPageTakeover', () => {
     stubBox(card);
 
     const session = beginPageTakeover({ duration: 0, sweep: 0, coverMs: 0, holdMs: 0, force: true });
+    const cover = document.querySelector('[data-scenaro-cover]') as HTMLIFrameElement;
+    expect(cover.srcdoc).toContain('Une expérience propulsée par');
+    expect(cover.srcdoc).toContain('>scenaro<');
+    expect(cover.srcdoc).toContain('Chargement en cours');
     const experience = document.createElement('iframe');
     experience.id = 'scenaro-iframe';
     document.documentElement.appendChild(experience);
