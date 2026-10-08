@@ -401,7 +401,8 @@ function openClipping(items: Item[]): () => void {
           || style.overflowX === 'auto' || style.overflowX === 'scroll';
         if (clips) {
           const rect = parent.getBoundingClientRect();
-          if (rect.width < width - 8 && rect.height < height - 8) {
+          const coversViewport = rect.width >= width - 2 && rect.height >= height - 2;
+          if (!coversViewport || rect.height > height + 40) {
             opened.add(parent);
             saved.push({
               el: parent,
@@ -429,9 +430,11 @@ function spotOf(el: Element): { seen: boolean; key: number; exit: number } {
   const width = window.innerWidth;
   const visibleW = Math.min(rect.right, width) - Math.max(rect.left, 0);
   const visibleH = Math.min(rect.bottom, height) - Math.max(rect.top, 0);
-  const seen = rect.width >= 1 && rect.height >= 1 && visibleW >= 1 && visibleH >= 1;
-  const y = Math.min(Math.max(rect.top, 0), height);
-  const row = Math.floor(y / 34);
+  const onScreen = rect.width >= 1 && rect.height >= 1 && visibleW >= 1 && visibleH >= 1;
+  // The next row sits under the fold. Snapping it to opacity 0 makes the bottom of the page vanish.
+  const justBelow = rect.width >= 1 && rect.height >= 1 && rect.top >= height && rect.top < height + 560;
+  const seen = onScreen || justBelow;
+  const row = Math.floor(Math.max(rect.top, 0) / 34);
   return { seen, key: row * 1e7 + Math.max(rect.left, 0), exit: Math.max(72, width - rect.left + 36) };
 }
 
@@ -463,15 +466,7 @@ function whenDone(anims: Animation[], fallbackMs: number): Promise<void> {
   for (const anim of anims) end = Math.max(end, animationEnd(anim));
   if (!end) end = fallbackMs || 0;
   return new Promise((resolve) => {
-    const timer = window.setTimeout(resolve, end + 60);
-    const pending = anims.map((anim) => {
-      if (!anim.finished || typeof anim.finished.then !== 'function') return Promise.resolve();
-      return anim.finished.then(() => undefined, () => undefined);
-    });
-    void Promise.all(pending).then(() => {
-      window.clearTimeout(timer);
-      resolve();
-    });
+    window.setTimeout(resolve, end + 80);
   });
 }
 
