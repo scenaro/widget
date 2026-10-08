@@ -491,21 +491,8 @@ function fadeOpacity(el: HTMLElement, from: number, to: number, ms: number): Pro
 }
 
 function lockScroll(): () => void {
-  const html = document.documentElement;
-  const body = document.body;
-  const scrollX = window.scrollX;
-  const scrollY = window.scrollY;
-  const gap = Math.max(0, window.innerWidth - html.clientWidth);
-  const saved = {
-    htmlOverflow: html.style.overflow,
-    bodyOverflow: body.style.overflow,
-    bodyPosition: body.style.position,
-    bodyTop: body.style.top,
-    bodyLeft: body.style.left,
-    bodyRight: body.style.right,
-    bodyWidth: body.style.width,
-    bodyPaddingRight: body.style.paddingRight,
-  };
+  // Block the gesture only. Pinning the body with position:fixed and
+  // overflow:hidden clips Magento to one screen, so the lower products vanish.
   const stopPointer = (event: Event) => event.preventDefault();
   const stopKeys = (event: KeyboardEvent) => {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
@@ -515,27 +502,10 @@ function lockScroll(): () => void {
   window.addEventListener('wheel', stopPointer, { passive: false, capture: true });
   window.addEventListener('touchmove', stopPointer, { passive: false, capture: true });
   window.addEventListener('keydown', stopKeys, { capture: true });
-  html.style.overflow = 'hidden';
-  body.style.overflow = 'hidden';
-  body.style.position = 'fixed';
-  body.style.top = `-${scrollY}px`;
-  body.style.left = `-${scrollX}px`;
-  body.style.right = '0';
-  body.style.width = '100%';
-  if (gap) body.style.paddingRight = `${gap}px`;
   return () => {
     window.removeEventListener('wheel', stopPointer, { capture: true });
     window.removeEventListener('touchmove', stopPointer, { capture: true });
     window.removeEventListener('keydown', stopKeys, { capture: true });
-    html.style.overflow = saved.htmlOverflow;
-    body.style.overflow = saved.bodyOverflow;
-    body.style.position = saved.bodyPosition;
-    body.style.top = saved.bodyTop;
-    body.style.left = saved.bodyLeft;
-    body.style.right = saved.bodyRight;
-    body.style.width = saved.bodyWidth;
-    body.style.paddingRight = saved.bodyPaddingRight;
-    window.scrollTo(scrollX, scrollY);
   };
 }
 

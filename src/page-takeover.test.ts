@@ -39,6 +39,9 @@ describe('beginPageTakeover', () => {
     document.documentElement.appendChild(experience);
 
     const play = session.play();
+    expect(document.body.style.position).toBe('');
+    expect(document.body.style.overflow).toBe('');
+    expect(document.documentElement.style.overflow).toBe('');
     expect(document.body.textContent).toContain('Bouteille');
     expect(document.getElementById('scenaro-iframe')).toBe(experience);
     await play;
