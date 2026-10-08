@@ -54,19 +54,43 @@ describe('beginPageTakeover', () => {
     expect(document.body.textContent).toContain('Bouteille');
     experience.remove();
   });
+
+  it('sweeps products below the screen instead of erasing them', async () => {
+    document.body.innerHTML = '<p style="opacity:1">Haut</p><p style="opacity:1">Bas</p>';
+    const [high, low] = [...document.querySelectorAll('p')] as HTMLElement[];
+    const calls: { el: HTMLElement; frames: Keyframe[]; timing: KeyframeAnimationOptions }[] = [];
+    const animate = function (this: HTMLElement, frames: Keyframe[] | PropertyIndexedKeyframes | null, timing?: number | KeyframeAnimationOptions) {
+      calls.push({ el: this, frames: frames as Keyframe[], timing: (timing ?? {}) as KeyframeAnimationOptions });
+      return { cancel() {}, finished: Promise.resolve(), effect: null } as unknown as Animation;
+    };
+    high.animate = animate;
+    low.animate = animate;
+    stubBox(high, 24);
+    stubBox(low, window.innerHeight + 900);
+
+    const session = beginPageTakeover({ duration: 80, sweep: 200, coverMs: 0, holdMs: 0, force: true });
+    const play = session.play();
+    const lowCall = calls.find((call) => call.el === low);
+    expect(lowCall).toBeTruthy();
+    expect(Number(lowCall?.timing.duration)).toBeGreaterThan(0);
+    expect(Number(lowCall?.timing.delay)).toBeGreaterThan(0);
+    expect(JSON.stringify(lowCall?.frames)).toContain('translate');
+    await play;
+    await session.restore();
+  });
 });
 
-function stubBox(el: HTMLElement): void {
+function stubBox(el: HTMLElement, top = 20): void {
   el.style.opacity = '1';
   el.getBoundingClientRect = () => ({
     width: 120,
     height: 40,
-    top: 20,
+    top,
     left: 16,
     right: 136,
-    bottom: 60,
+    bottom: top + 40,
     x: 16,
-    y: 20,
+    y: top,
     toJSON: () => ({}),
   });
 }

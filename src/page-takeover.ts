@@ -50,7 +50,7 @@ interface AtomItem {
   opacity: string;
   exit: number;
   key: number;
-  seen: boolean;
+  above: boolean;
 }
 
 interface ShellItem {
@@ -60,7 +60,7 @@ interface ShellItem {
   to: Paint;
   exit: number;
   key: number;
-  seen: boolean;
+  above: boolean;
 }
 
 type Item = AtomItem | ShellItem;
@@ -86,12 +86,12 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
         opacity: getComputedStyle(el).opacity,
         exit: reduce ? 0 : spot.exit,
         key: spot.key,
-        seen: spot.seen,
+        above: spot.above,
       };
     }),
     ...shells.map((shell): ShellItem => {
       const spot = spotOf(shell.el);
-      return { ...shell, kind: 'shell', exit: 0, key: spot.key, seen: spot.seen };
+      return { ...shell, kind: 'shell', exit: 0, key: spot.key, above: spot.above };
     }),
   ];
   const unlockScroll = lockScroll();
@@ -133,17 +133,29 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   async function runPlay(): Promise<void> {
     removeOverlayClear = clearPageOverlays(overlayMs);
     restoreClipping = openClipping(items);
-    const seen = items.filter((item) => item.seen).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
-    const hidden = items.filter((item) => !item.seen);
-    const gap = seen.length > 1 ? sweep / (seen.length - 1) : 0;
-    for (const item of hidden) playOut(item, { duration: 0, fill: 'forwards' });
-    seen.forEach((item, index) => playOut(item, {
-      duration,
-      delay: index * gap,
-      easing: 'cubic-bezier(0.45, 0, 1, 1)',
-      fill: 'forwards',
-    }));
-    await whenDone(anims, sweep + duration);
+    // Only content already above the viewport is parked. Everything from the
+    // top of the screen to the bottom of the document stays in the wave.
+    const parked = items.filter((item) => item.above);
+    const wave = items.filter((item) => !item.above).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
+    const lastVisibleRow = Math.floor(Math.max(window.innerHeight - 1, 0) / 34);
+    const onScreenCount = wave.filter((item) => Math.floor(item.key / 1e7) <= lastVisibleRow).length;
+    const belowCount = wave.length - onScreenCount;
+    const gap = onScreenCount > 1 ? sweep / (onScreenCount - 1) : 0;
+    const extraGap = belowCount > 0 ? Math.min(gap > 0 ? gap : 24, 1800 / belowCount) : 0;
+    let endAt = 0;
+    for (const item of parked) playOut(item, { duration: 0, fill: 'forwards' });
+    wave.forEach((item, index) => {
+      const below = index >= onScreenCount;
+      const delay = below ? sweep + (index - onScreenCount + 1) * extraGap : index * gap;
+      endAt = Math.max(endAt, delay + duration);
+      playOut(item, {
+        duration,
+        delay,
+        easing: 'cubic-bezier(0.45, 0, 1, 1)',
+        fill: 'forwards',
+      });
+    });
+    await whenDone(anims, endAt);
     if (restored) return;
     coverShown = true;
     releasePointer();
@@ -171,7 +183,7 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     try {
       const anim = item.kind === 'atom'
         ? item.el.animate(
-          item.seen ? depart(item.opacity, item.exit) : [{ opacity: item.opacity }, { opacity: '0' }],
+          item.above ? [{ opacity: item.opacity }, { opacity: '0' }] : depart(item.opacity, item.exit),
           timing,
         )
         : item.el.animate([item.from, item.to], timing);
@@ -374,7 +386,7 @@ function collectShells(root: Element, atoms: HTMLElement[]): ShellItem[] {
     const isCanvas = el === document.documentElement || el === document.body;
     if (!insideAtom && !isAtom && !isCanvas && el instanceof HTMLElement && hasBox(el, style)) {
       const paint = shellPaint(style);
-      if (paint) shells.push({ el, kind: 'shell', exit: 0, key: 0, seen: false, ...paint });
+      if (paint) shells.push({ el, kind: 'shell', exit: 0, key: 0, above: false, ...paint });
     }
     if (isAtom || ATOM.has(el.tagName)) return;
     for (const child of el.children) collect(child, insideAtom);
@@ -392,7 +404,7 @@ function openClipping(items: Item[]): () => void {
   const width = window.innerWidth;
   const height = window.innerHeight;
   for (const item of items) {
-    if (!item.seen) continue;
+    if (item.above) continue;
     let parent = item.el.parentElement;
     while (parent && parent !== document.body && parent !== document.documentElement) {
       if (!opened.has(parent)) {
@@ -424,18 +436,17 @@ function openClipping(items: Item[]): () => void {
   };
 }
 
-function spotOf(el: Element): { seen: boolean; key: number; exit: number } {
+function spotOf(el: Element): { above: boolean; key: number; exit: number } {
   const rect = el.getBoundingClientRect();
-  const height = window.innerHeight;
   const width = window.innerWidth;
-  const visibleW = Math.min(rect.right, width) - Math.max(rect.left, 0);
-  const visibleH = Math.min(rect.bottom, height) - Math.max(rect.top, 0);
-  const onScreen = rect.width >= 1 && rect.height >= 1 && visibleW >= 1 && visibleH >= 1;
-  // The next row sits under the fold. Snapping it to opacity 0 makes the bottom of the page vanish.
-  const justBelow = rect.width >= 1 && rect.height >= 1 && rect.top >= height && rect.top < height + 560;
-  const seen = onScreen || justBelow;
+  // Keep the real top, including values past the bottom of the screen.
+  // Clamping that edge is what made the lower products vanish instead of leaving.
   const row = Math.floor(Math.max(rect.top, 0) / 34);
-  return { seen, key: row * 1e7 + Math.max(rect.left, 0), exit: Math.max(72, width - rect.left + 36) };
+  return {
+    above: rect.bottom <= 0,
+    key: row * 1e7 + Math.max(rect.left, 0),
+    exit: Math.max(72, width - rect.left + 36),
+  };
 }
 
 function depart(opacity: string, exit: number): Keyframe[] {
@@ -464,7 +475,7 @@ function animationEnd(anim: Animation): number {
 function whenDone(anims: Animation[], fallbackMs: number): Promise<void> {
   let end = 0;
   for (const anim of anims) end = Math.max(end, animationEnd(anim));
-  if (!end) end = fallbackMs || 0;
+  end = Math.max(end, fallbackMs || 0);
   return new Promise((resolve) => {
     window.setTimeout(resolve, end + 80);
   });
