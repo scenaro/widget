@@ -76,7 +76,7 @@ describe('beginPageTakeover', () => {
     const lowCall = calls.find((call) => call.el === low);
     expect(lowCall).toBeTruthy();
     expect(Number(lowCall?.timing.duration)).toBeGreaterThan(0);
-    expect(Number(lowCall?.timing.delay)).toBeGreaterThan(0);
+    expect(Number(lowCall?.timing.delay)).toBe(200);
     expect(JSON.stringify(lowCall?.frames)).toContain('translate');
     await play;
     await session.restore();

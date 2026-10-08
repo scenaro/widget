@@ -50,6 +50,7 @@ interface AtomItem {
   opacity: string;
   exit: number;
   key: number;
+  top: number;
   above: boolean;
 }
 
@@ -60,6 +61,7 @@ interface ShellItem {
   to: Paint;
   exit: number;
   key: number;
+  top: number;
   above: boolean;
 }
 
@@ -68,7 +70,7 @@ type Item = AtomItem | ShellItem;
 export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeoverSession {
   const reduce = !options.force && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const duration = options.duration ?? (reduce ? 180 : 640);
-  const sweep = reduce ? 0 : (options.sweep ?? 1500);
+  const sweep = reduce ? 0 : (options.sweep ?? 1000);
   const coverMs = options.coverMs ?? 220;
   const holdMs = options.holdMs ?? 2000;
   const overlayMs = options.duration === 0 && options.sweep === 0 ? 0 : (reduce ? 0 : 180);
@@ -86,12 +88,13 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
         opacity: getComputedStyle(el).opacity,
         exit: reduce ? 0 : spot.exit,
         key: spot.key,
+        top: spot.top,
         above: spot.above,
       };
     }),
     ...shells.map((shell): ShellItem => {
       const spot = spotOf(shell.el);
-      return { ...shell, kind: 'shell', exit: 0, key: spot.key, above: spot.above };
+      return { ...shell, kind: 'shell', exit: 0, key: spot.key, top: spot.top, above: spot.above };
     }),
   ];
   const unlockScroll = lockScroll();
@@ -133,29 +136,21 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   async function runPlay(): Promise<void> {
     removeOverlayClear = clearPageOverlays(overlayMs);
     restoreClipping = openClipping(items);
-    // Only content already above the viewport is parked. Everything from the
-    // top of the screen to the bottom of the document stays in the wave.
+    // The wave crosses the screen in a fixed time. Page length and scroll
+    // position do not push the loader later.
     const parked = items.filter((item) => item.above);
-    const wave = items.filter((item) => !item.above).sort((a, b) => a.key - b.key || (a.kind === 'shell' ? -1 : 1));
-    const lastVisibleRow = Math.floor(Math.max(window.innerHeight - 1, 0) / 34);
-    const onScreenCount = wave.filter((item) => Math.floor(item.key / 1e7) <= lastVisibleRow).length;
-    const belowCount = wave.length - onScreenCount;
-    const gap = onScreenCount > 1 ? sweep / (onScreenCount - 1) : 0;
-    const extraGap = belowCount > 0 ? Math.min(gap > 0 ? gap : 24, 1800 / belowCount) : 0;
-    let endAt = 0;
+    const wave = items.filter((item) => !item.above);
+    const coverAt = sweep > 0 ? sweep + 160 : duration;
     for (const item of parked) playOut(item, { duration: 0, fill: 'forwards' });
-    wave.forEach((item, index) => {
-      const below = index >= onScreenCount;
-      const delay = below ? sweep + (index - onScreenCount + 1) * extraGap : index * gap;
-      endAt = Math.max(endAt, delay + duration);
+    for (const item of wave) {
       playOut(item, {
         duration,
-        delay,
+        delay: delayOnScreen(item.top, item.key % 1e7, sweep),
         easing: 'cubic-bezier(0.45, 0, 1, 1)',
         fill: 'forwards',
       });
-    });
-    await whenDone(anims, endAt);
+    }
+    await sleep(coverAt);
     if (restored) return;
     coverShown = true;
     releasePointer();
@@ -386,7 +381,7 @@ function collectShells(root: Element, atoms: HTMLElement[]): ShellItem[] {
     const isCanvas = el === document.documentElement || el === document.body;
     if (!insideAtom && !isAtom && !isCanvas && el instanceof HTMLElement && hasBox(el, style)) {
       const paint = shellPaint(style);
-      if (paint) shells.push({ el, kind: 'shell', exit: 0, key: 0, above: false, ...paint });
+      if (paint) shells.push({ el, kind: 'shell', exit: 0, key: 0, top: 0, above: false, ...paint });
     }
     if (isAtom || ATOM.has(el.tagName)) return;
     for (const child of el.children) collect(child, insideAtom);
@@ -436,17 +431,25 @@ function openClipping(items: Item[]): () => void {
   };
 }
 
-function spotOf(el: Element): { above: boolean; key: number; exit: number } {
+function spotOf(el: Element): { above: boolean; key: number; top: number; exit: number } {
   const rect = el.getBoundingClientRect();
   const width = window.innerWidth;
-  // Keep the real top, including values past the bottom of the screen.
-  // Clamping that edge is what made the lower products vanish instead of leaving.
   const row = Math.floor(Math.max(rect.top, 0) / 34);
   return {
     above: rect.bottom <= 0,
     key: row * 1e7 + Math.max(rect.left, 0),
+    top: rect.top,
     exit: Math.max(72, width - rect.left + 36),
   };
+}
+
+function delayOnScreen(top: number, left: number, sweep: number): number {
+  if (sweep <= 0) return 0;
+  const height = Math.max(window.innerHeight, 1);
+  const width = Math.max(window.innerWidth, 1);
+  const y = Math.min(Math.max(top, 0), height) / height;
+  const x = Math.min(Math.max(left, 0), width) / width;
+  return Math.min(sweep, y * sweep + x * Math.min(48, sweep * 0.08));
 }
 
 function depart(opacity: string, exit: number): Keyframe[] {
