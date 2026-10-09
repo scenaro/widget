@@ -84,11 +84,18 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          # Immutable release bundles. Do not delete older releases.
-          aws s3 sync dist/releases/ s3://scenaro-widget-cdn/releases/ \
-            --cache-control "public, max-age=31536000, immutable" \
-            --content-type "text/javascript" \
-            --exclude "*.html"
+          # Immutable release bundles. Do not delete or replace an existing release.
+          for dir in dist/releases/*/; do
+            name=$(basename "$dir")
+            if aws s3 ls "s3://scenaro-widget-cdn/releases/${name}/widget.js" >/dev/null 2>&1; then
+              echo "Release ${name} already exists, left untouched."
+              continue
+            fi
+            aws s3 sync "$dir" "s3://scenaro-widget-cdn/releases/${name}/" \
+              --cache-control "public, max-age=31536000, immutable" \
+              --content-type "text/javascript" \
+              --exclude "*.html"
+          done
 
           # Loader and the release index. Short cache, same idea as Stripe.js /v3/.
           aws s3 cp dist/widget.js s3://scenaro-widget-cdn/widget.js \

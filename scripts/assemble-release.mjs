@@ -43,18 +43,22 @@ for (const name of readdirSync(dist)) {
 }
 
 const stub = readFileSync(join(root, "scripts/scenaro-stub.js"), "utf8").trim();
+const pins = config.pins && typeof config.pins === "object" ? config.pins : {};
+const keep = Array.isArray(config.keep) ? config.keep : [];
 
 const loader = `/* Scenaro widget loader. Cache briefly. Release files are immutable. */
 (function () {
   var COHORT = ${cohort};
   var STABLE = ${JSON.stringify(config.stable)};
   var BETA = ${JSON.stringify(config.beta)};
+  var PINS = ${JSON.stringify(pins)};
   var current = document.currentScript;
   if (!current || !current.src) return;
   installScenaroStub(window);
   var pin = (current.dataset.version || "").trim();
   var shop = (window.Shopify && window.Shopify.shop) || location.hostname;
-  var version = pin && pin !== "auto" ? pin : (bucket(shop) < COHORT ? BETA : STABLE);
+  var pinned = PINS[shop] || "";
+  var version = pin && pin !== "auto" ? pin : (pinned || (bucket(shop) < COHORT ? BETA : STABLE));
   var url = new URL(current.src, location.href);
   var dir = url.pathname.replace(/\\/[^/]*$/, "");
   var next = document.createElement("script");
@@ -76,7 +80,7 @@ const loader = `/* Scenaro widget loader. Cache briefly. Release files are immut
 
 writeFileSync(join(dist, "widget.js"), loader);
 
-const listed = new Set([config.stable, config.beta, config.release]);
+const listed = new Set([config.stable, config.beta, config.release, ...Object.values(pins), ...keep]);
 const releasesPath = join(dist, "releases.json");
 writeFileSync(
   releasesPath,

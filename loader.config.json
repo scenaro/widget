@@ -2,5 +2,10 @@
   "cohort": 0,
   "stable": "2026-10-07-17",
   "beta": "2026-10-07-17",
-  "release": "2026-10-09-1"
+  "release": "2026-10-07-17",
+  "keep": ["2026-10-08-18"],
+  "pins": {
+    "clubfrancaisduvin.com": "2026-10-06-2",
+    "www.clubfrancaisduvin.com": "2026-10-06-2"
+  }
 }
