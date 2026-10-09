@@ -42,6 +42,8 @@ for (const name of readdirSync(dist)) {
   }
 }
 
+const stub = readFileSync(join(root, "scripts/scenaro-stub.js"), "utf8").trim();
+
 const loader = `/* Scenaro widget loader. Cache briefly. Release files are immutable. */
 (function () {
   var COHORT = ${cohort};
@@ -49,6 +51,7 @@ const loader = `/* Scenaro widget loader. Cache briefly. Release files are immut
   var BETA = ${JSON.stringify(config.beta)};
   var current = document.currentScript;
   if (!current || !current.src) return;
+  installScenaroStub(window);
   var pin = (current.dataset.version || "").trim();
   var shop = (window.Shopify && window.Shopify.shop) || location.hostname;
   var version = pin && pin !== "auto" ? pin : (bucket(shop) < COHORT ? BETA : STABLE);
@@ -67,6 +70,7 @@ const loader = `/* Scenaro widget loader. Cache briefly. Release files are immut
     for (var i = 0; i < value.length; i++) hash = ((hash << 5) + hash) ^ value.charCodeAt(i);
     return (hash >>> 0) % 100;
   }
+  ${stub}
 })();
 `;
 
