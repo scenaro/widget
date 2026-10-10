@@ -2,25 +2,142 @@ name: Deploy to AWS
 
 on:
   push:
-    branches: [production]
+    branches: [production, staging]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
 
 jobs:
-  deploy:
+  deploy-staging:
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # Required for OIDC
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: eu-west-3
+      S3_BUCKET: scenaro-widget-cdn-staging
+      CDN_DOMAIN: cdn.staging.scenaro.io
+      TF_STATE_KEY: scenaro/widget/staging/terraform.tfstate
+      TF_DIR: terraform/staging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Refuse production widget targets
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_REF}" = "refs/heads/staging" ]
+          [ "${S3_BUCKET}" = "scenaro-widget-cdn-staging" ]
+          [ "${CDN_DOMAIN}" = "cdn.staging.scenaro.io" ]
+          [ "${TF_STATE_KEY}" = "scenaro/widget/staging/terraform.tfstate" ]
+          grep -q 'key *= *"scenaro/widget/staging/terraform.tfstate"' "${TF_DIR}/main.tf"
+          grep -q 'cdn.staging.scenaro.io' "${TF_DIR}/main.tf"
+          grep -q 'scenaro-widget-cdn-staging' "${TF_DIR}/main.tf"
+          if grep -q 'scenaro-widget-cdn"' "${TF_DIR}/main.tf"; then
+            echo "::error::staging terraform mentions the production bucket"
+            exit 1
+          fi
+          if grep -q 'cdn.scenaro.io"' "${TF_DIR}/main.tf"; then
+            echo "::error::staging terraform mentions the production CDN hostname"
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: '1.5.0'
+
+      - name: Terraform apply staging CDN
+        working-directory: terraform/staging
+        run: |
+          set -euo pipefail
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=scenaro-tfstate" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=eu-west-3" \
+            -backend-config="dynamodb_table=scenaro-tf-locks" \
+            -backend-config="encrypt=true"
+          key="$(jq -r '.backend.config.key' .terraform/terraform.tfstate)"
+          if [ "$key" != "scenaro/widget/staging/terraform.tfstate" ]; then
+            echo "::error::Terraform state key is ${key}. Apply aborted."
+            exit 1
+          fi
+          terraform apply -input=false -auto-approve
+          domain="$(terraform output -raw custom_domain)"
+          bucket="$(terraform output -raw s3_bucket_id)"
+          dist="$(terraform output -raw cloudfront_distribution_id)"
+          if [ "$domain" != "cdn.staging.scenaro.io" ] || [ "$bucket" != "scenaro-widget-cdn-staging" ]; then
+            echo "::error::staging outputs are domain=${domain} bucket=${bucket}"
+            exit 1
+          fi
+          alias="$(aws cloudfront get-distribution --id "$dist" --query 'Distribution.DistributionConfig.Aliases.Items[0]' --output text)"
+          if [ "$alias" != "cdn.staging.scenaro.io" ]; then
+            echo "::error::CloudFront alias is ${alias}. Invalidation aborted."
+            exit 1
+          fi
+          echo "distribution_id=${dist}" >> "$GITHUB_ENV"
+
+      - name: Deploy to the staging bucket
+        run: |
+          set -euo pipefail
+          if [ "${S3_BUCKET}" != "scenaro-widget-cdn-staging" ]; then
+            echo "::error::refusing bucket ${S3_BUCKET}"
+            exit 1
+          fi
+          for dir in dist/releases/*/; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            if aws s3 ls "s3://${S3_BUCKET}/releases/${name}/widget.js" >/dev/null 2>&1; then
+              echo "Release ${name} already exists, left untouched."
+              continue
+            fi
+            aws s3 sync "$dir" "s3://${S3_BUCKET}/releases/${name}/" \
+              --cache-control "public, max-age=31536000, immutable" \
+              --content-type "text/javascript" \
+              --exclude "*.html"
+          done
+          aws s3 cp dist/widget.js "s3://${S3_BUCKET}/widget.js" \
+            --cache-control "public, max-age=300" \
+            --content-type "text/javascript"
+          aws s3 cp dist/releases.json "s3://${S3_BUCKET}/releases.json" \
+            --cache-control "public, max-age=300" \
+            --content-type "application/json"
+          aws s3 sync dist/runtime/ "s3://${S3_BUCKET}/runtime/" \
+            --delete \
+            --cache-control "public, max-age=3600"
+
+      - name: Invalidate the staging distribution
+        if: env.distribution_id != ''
+        run: |
+          set -euo pipefail
+          aws cloudfront create-invalidation \
+            --distribution-id "${distribution_id}" \
+            --paths "/widget.js" "/releases.json"
+
+  deploy:
+    if: github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
       contents: read
     steps:
       - name: Checkout repository
@@ -52,27 +169,24 @@ jobs:
         id: get-cf-id
         working-directory: ./terraform
         run: |
-          # Initialize Terraform to access remote state
           terraform init -backend-config="bucket=scenaro-tfstate" \
                          -backend-config="key=scenaro/widget/production/terraform.tfstate" \
                          -backend-config="region=eu-west-3" \
                          -backend-config="dynamodb_table=scenaro-tf-locks" \
                          -backend-config="encrypt=true" \
                          -input=false
-          
-          # Get CloudFront distribution ID from Terraform output
+
           DIST_ID=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
-          
+
           if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "null" ]; then
             echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
             echo "✓ Found CloudFront Distribution ID from Terraform: $DIST_ID"
           else
-            # Fallback: Query AWS directly by domain name
             echo "Terraform output not available, querying AWS..."
             DIST_ID=$(aws cloudfront list-distributions \
-              --query "DistributionList.Items[?Aliases.Items[?contains(@, 'cdn.scenaro.io')]].Id" \
+              --query "DistributionList.Items[?Aliases.Items[?@=='cdn.scenaro.io']].Id" \
               --output text 2>/dev/null || echo "")
-            
+
             if [ -n "$DIST_ID" ]; then
               echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
               echo "✓ Found CloudFront Distribution ID from AWS: $DIST_ID"
@@ -84,7 +198,6 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          # Immutable release bundles. Do not delete or replace an existing release.
           for dir in dist/releases/*/; do
             name=$(basename "$dir")
             if aws s3 ls "s3://scenaro-widget-cdn/releases/${name}/widget.js" >/dev/null 2>&1; then
@@ -97,7 +210,6 @@ jobs:
               --exclude "*.html"
           done
 
-          # Loader and the release index. Short cache, same idea as Stripe.js /v3/.
           aws s3 cp dist/widget.js s3://scenaro-widget-cdn/widget.js \
             --cache-control "public, max-age=300" \
             --content-type "text/javascript"
@@ -105,7 +217,6 @@ jobs:
             --cache-control "public, max-age=300" \
             --content-type "application/json"
 
-          # Runtime files with shorter cache
           aws s3 sync dist/runtime/ s3://scenaro-widget-cdn/runtime/ \
             --delete \
             --cache-control "public, max-age=3600"
@@ -118,4 +229,3 @@ jobs:
             --distribution-id ${{ steps.get-cf-id.outputs.distribution_id }} \
             --paths "/widget.js" "/releases.json"
         continue-on-error: true
-
