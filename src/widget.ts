@@ -1,10 +1,6 @@
-import { presentExperience, showExperience, whenIframeReady } from './experience-transition';
-import { assistantCopy, buildChooser, buildDockChoices, buildWaiting, ensureChooserStyles, isWideChooser, motionMs } from './chooser';
-import { AppearanceName, appearanceOf, beginPageTakeover, createLoaderFrame, fadeLoader, IMMERSIVE_LOADER_STATUS, LOADER_FADE_MS, LOADER_HOLD_MS, PageTakeoverSession, pinHostPage, placeFixedBox, playLoader, visibleViewportBox } from './page-takeover';
+import { AppearanceName, appearanceOf, beginPageTakeover, PageTakeoverSession } from './page-takeover';
 import { detectStorefront } from './storefront';
 import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroEventPayload, ScenaroOpenConfig } from './types';
-
-type LaunchShell = 'appearance' | 'takeover' | 'fade' | 'chat';
 
 /** Stored overflow values to restore when exiting fullscreen */
 let parentOverflow: { html: string; body: string } | null = null;
@@ -12,6 +8,20 @@ let parentOverflow: { html: string; body: string } | null = null;
 /** Wake Lock API (screen awake) - optional on Navigator */
 interface WakeLockSentinel {
   release(): Promise<void>;
+}
+
+/** Resolves on the experience iframe's load, or after timeoutMs so the cover never waits forever. */
+function whenIframeReady(iframe: HTMLIFrameElement, timeoutMs = 10000): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    iframe.addEventListener('load', finish, { once: true });
+    window.setTimeout(finish, timeoutMs);
+  });
 }
 
 class ScenaroWidget {
@@ -34,21 +44,8 @@ class ScenaroWidget {
   private isFullscreenAttachment: boolean = false;
   /** Viewport listeners for fullscreen dynamic height - removed in close() */
   private viewportResizeHandler: (() => void) | null = null;
-  /** Puts the store back where it was when the fullscreen iframe closes. */
-  private releaseHostPage: (() => void) | null = null;
   private wakeLockSentinel: WakeLockSentinel | null = null;
   private visibilityChangeHandler: (() => void) | null = null;
-  private shell: LaunchShell = 'appearance';
-  private nextShell: LaunchShell | null = null;
-  private chatEmbed = false;
-  private nextChat = false;
-  private chooser: HTMLElement | null = null;
-  private chooserBackdrop: HTMLElement | null = null;
-  private fadeVeil: HTMLElement | null = null;
-  private floatingButton: HTMLElement | null = null;
-  private dock: HTMLElement | null = null;
-  private onChooserKey: ((event: KeyboardEvent) => void) | null = null;
-  private onChooserOutside: ((event: MouseEvent) => void) | null = null;
 
   constructor() {
     this.publicationId = this.detectConfig();
@@ -115,12 +112,8 @@ class ScenaroWidget {
   }
 
   public async open(config?: ScenaroOpenConfig) {
-    if (this.iframe || this.opening || this.panel || this.fadeVeil) return; // Already open
+    if (this.iframe || this.opening) return; // Already open
     this.opening = true;
-    this.shell = this.nextShell ?? 'appearance';
-    this.nextShell = null;
-    this.chatEmbed = this.nextChat;
-    this.nextChat = false;
 
     // Publication ID: config override or script tag
     const publicationId = (config?.publicationId && config.publicationId.trim() !== '')
@@ -144,8 +137,7 @@ class ScenaroWidget {
   }
 
   public close() {
-    this.dismissChooser();
-    if (!this.iframe && !this.panel && !this.takeover && !this.fadeVeil) return;
+    if (!this.iframe && !this.panel && !this.takeover) return;
     this.sessionId += 1;
 
     this.stopViewportListeners();
@@ -160,13 +152,11 @@ class ScenaroWidget {
     const iframe = this.iframe;
     const takeover = this.takeover;
     const closeButton = this.closeButton;
-    const fadeVeil = this.fadeVeil;
     this.panel = null;
     this.overlay = null;
     this.iframe = null;
     this.takeover = null;
     this.closeButton = null;
-    this.fadeVeil = null;
     this.emit('close');
 
     if (takeover) {
@@ -174,10 +164,7 @@ class ScenaroWidget {
       return;
     }
 
-    this.releasePinnedHost();
     this.setLaunchersHidden(false);
-    fadeVeil?.remove();
-    closeButton?.remove();
 
     if (overlay) {
       overlay.style.opacity = '0';
@@ -199,18 +186,6 @@ class ScenaroWidget {
     iframe?.remove();
   }
 
-  /** Pin the store only once the iframe covers it. The opening sweep must not do this. */
-  private holdHostPage(): void {
-    if (this.releaseHostPage) return;
-    this.releaseHostPage = pinHostPage();
-  }
-
-  private releasePinnedHost(): void {
-    const release = this.releaseHostPage;
-    this.releaseHostPage = null;
-    release?.();
-  }
-
   /** Hide or restore scrollbars on the parent document (html + body) when iframe is fullscreen. */
   private setParentScrollbarsHidden(hide: boolean): void {
     const doc = document;
@@ -230,16 +205,17 @@ class ScenaroWidget {
     }
   }
 
-  /** Fit the open iframe, its cover and the close button to the visible viewport, including Chrome's URL bar. */
+  /** Current visible viewport height (accounts for mobile browser bar). Used for fullscreen iframe height. */
+  private getVisibleHeight(): number {
+    const vv = (window as Window & { visualViewport?: { height: number } }).visualViewport;
+    return (vv?.height ?? window.innerHeight) || window.innerHeight;
+  }
+
+  /** Apply current viewport height to the expanded panel. Call on resize/orientation. */
   private applyViewportHeight(): void {
-    const box = visibleViewportBox();
-    if (this.panel && this.panelMode === 'full') this.panel.style.height = `${box.height}px`;
-    if (this.isFullscreenAttachment && this.iframe) placeFixedBox(this.iframe, box);
-    if (this.isFullscreenAttachment && this.closeButton) {
-      this.closeButton.style.top = `${box.top + 16}px`;
-      this.closeButton.style.left = `${box.left + 16}px`;
-    }
-    if (this.fadeVeil) placeFixedBox(this.fadeVeil, box);
+    const height = `${this.getVisibleHeight()}px`;
+    if (this.panel && this.panelMode === 'full') this.panel.style.height = height;
+    if (this.takeover && this.iframe) this.iframe.style.height = height;
   }
 
   /** Attach resize/orientation/visualViewport listeners so fullscreen iframe height tracks visible viewport. */
@@ -250,10 +226,7 @@ class ScenaroWidget {
     window.addEventListener('resize', apply);
     window.addEventListener('orientationchange', apply);
     const vv = (window as Window & { visualViewport?: { addEventListener: (e: string, fn: () => void) => void } }).visualViewport;
-    if (vv?.addEventListener) {
-      vv.addEventListener('resize', apply);
-      vv.addEventListener('scroll', apply);
-    }
+    if (vv?.addEventListener) vv.addEventListener('resize', apply);
     this.applyViewportHeight();
   }
 
@@ -265,10 +238,7 @@ class ScenaroWidget {
     window.removeEventListener('resize', apply);
     window.removeEventListener('orientationchange', apply);
     const vv = (window as Window & { visualViewport?: { removeEventListener: (e: string, fn: () => void) => void } }).visualViewport;
-    if (vv?.removeEventListener) {
-      vv.removeEventListener('resize', apply);
-      vv.removeEventListener('scroll', apply);
-    }
+    if (vv?.removeEventListener) vv.removeEventListener('resize', apply);
   }
 
   /** Acquire screen wake lock so device doesn't sleep while iframe is open. No-op if unsupported. */
@@ -437,9 +407,8 @@ class ScenaroWidget {
     }
 
     // data-iframe-url skips embed.scenaro.io. That host sends X-Frame-Options: DENY,
-    // which Chrome shows inside the iframe as "refused to connect". The chat
-    // publication stays on embed.scenaro.io even when the immersive URL is overridden.
-    const embedOverride = this.chatEmbed ? '' : this.scriptEl?.dataset.iframeUrl;
+    // which Chrome shows inside the iframe as "refused to connect".
+    const embedOverride = this.scriptEl?.dataset.iframeUrl;
     const baseUrl = embedOverride && embedOverride.trim() !== ''
       ? embedOverride.trim()
       : `https://embed.scenaro.io/${id}`;
@@ -450,9 +419,7 @@ class ScenaroWidget {
       url.searchParams.append('language', this.metadata.language);
     }
 
-    url.searchParams.set('scenaroTransition', '1');
     iframe.src = url.toString();
-    void whenIframeReady(iframe);
     iframe.allow = "microphone *; autoplay *";
     iframe.style.border = 'none';
     iframe.style.zIndex = '2147483647';
@@ -460,9 +427,8 @@ class ScenaroWidget {
     iframe.style.touchAction = 'manipulation';
 
     // Prefer #scenaro-container so iframe is in-page (not fullscreen). Wait for it if not yet in DOM.
-    // The floating chooser picks its own shell and does not fall into that container.
     const sessionId = this.sessionId;
-    const container = this.shell === 'appearance' ? await this.getContainerOrWait() : null;
+    const container = await this.getContainerOrWait();
     if (sessionId !== this.sessionId) {
       iframe.remove();
       return;
@@ -471,16 +437,11 @@ class ScenaroWidget {
       Object.assign(iframe.style, { width: '100%', height: '100%', display: 'block' });
       container.appendChild(iframe);
       this.iframe = iframe;
-    } else if (this.shell === 'chat') {
-      this.mountChatPanel(iframe);
-      this.iframe = iframe;
-    } else if (this.shell === 'fade') {
-      await this.mountFade(iframe, sessionId);
-    } else if (this.shell === 'takeover' || this.appearance !== 'panel') {
-      await this.mountTakeover(iframe, sessionId);
-    } else {
+    } else if (this.appearance === 'panel') {
       this.mountDockedPanel(iframe);
       this.iframe = iframe;
+    } else {
+      await this.mountTakeover(iframe, sessionId);
     }
 
     if (sessionId !== this.sessionId) return;
@@ -580,41 +541,6 @@ class ScenaroWidget {
 
   private mountFloatingLauncher() {
     const button = this.launcherRoot('floating', this.launcherLabel('floating', 'Conseiller'));
-    this.floatingButton = button;
-    button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (this.chooser || this.dock?.classList.contains('is-open')) {
-        this.dismissChooser();
-        return;
-      }
-      if (this.iframe || this.panel || this.takeover || this.fadeVeil) {
-        this.close();
-        return;
-      }
-      this.mountChooser();
-    });
-
-    if (button.classList.contains('scenaro-glass-launcher')) {
-      const shell = document.createElement('div');
-      shell.className = 'scenaro-dock';
-      shell.dataset.scenaroChrome = '1';
-      if (this.buttonTone() === 'black') shell.classList.add('is-black');
-      shell.append(button, buildDockChoices(this.copy()));
-      shell.addEventListener('click', (event) => {
-        const target = event.target as HTMLElement | null;
-        const choice = target?.closest<HTMLElement>('[data-scenaro-choice]')?.dataset.scenaroChoice;
-        if (choice === 'chat') this.chooseChat();
-        if (choice === 'immersive') this.chooseImmersive();
-      });
-      document.body.appendChild(shell);
-      this.dock = shell;
-      const width = Math.ceil(shell.getBoundingClientRect().width);
-      shell.style.setProperty('--scenaro-closed', `${width}px`);
-      return;
-    }
-
     if (!button.style.position) {
       Object.assign(button.style, {
         position: 'fixed',
@@ -623,6 +549,9 @@ class ScenaroWidget {
         zIndex: '2147483640',
       });
     }
+    button.addEventListener('click', () => {
+      void this.open({ metadata: { entry: 'floating', page: location.href } });
+    });
     document.body.appendChild(button);
   }
 
@@ -720,10 +649,6 @@ class ScenaroWidget {
       this.matchStoreButton(button, kind);
       return button;
     }
-    if (kind === 'floating') {
-      this.dressFloatingButton(button, label);
-      return button;
-    }
     Object.assign(button.style, {
       display: 'inline-flex',
       alignItems: 'center',
@@ -732,56 +657,17 @@ class ScenaroWidget {
       padding: '0 18px',
       border: '1px solid rgba(0, 0, 0, 0.2)',
       borderRadius: '2px',
-      background: 'transparent',
+      background: kind === 'floating' ? '#fff' : 'transparent',
       color: 'inherit',
       font: 'inherit',
       fontWeight: '600',
       cursor: 'pointer',
       width: kind === 'product' ? '100%' : 'auto',
       margin: kind === 'product' ? '0 0 12px' : '0',
+      boxShadow: kind === 'floating' ? '0 8px 24px rgba(0, 0, 0, 0.12)' : 'none',
     });
     this.matchStoreButton(button, kind);
     return button;
-  }
-
-  /** White pill, same ink and ring as the page-takeover loader. */
-  private dressFloatingButton(button: HTMLButtonElement, label: string) {
-    ensureChooserStyles();
-    button.classList.add('scenaro-glass-launcher');
-    button.textContent = '';
-    const ink = this.buttonTone() === 'black' ? '#ffffff' : '#1a1820';
-    const mark = document.createElement('span');
-    mark.className = 'scenaro-launcher-mark';
-    mark.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="32 32 192 192" width="15" height="15" fill="none" aria-hidden="true"><defs><linearGradient id="scenaro-launcher-ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${ink}" stop-opacity="0.05"/><stop offset="1" stop-color="${ink}" stop-opacity="1"/></linearGradient></defs><path fill="url(#scenaro-launcher-ring)" fill-rule="evenodd" d="M128 32a96 96 0 1 1 0 192 96 96 0 0 1 0-192Zm0 32a64 64 0 1 0 0 128 64 64 0 0 0 0-128Z"/></svg>`;
-    Object.assign(mark.style, {
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '15px',
-      height: '15px',
-      flex: '0 0 auto',
-    });
-    const text = document.createElement('span');
-    text.textContent = label;
-    text.style.whiteSpace = 'nowrap';
-    const chevron = document.createElement('span');
-    chevron.className = 'scenaro-dock-chevron';
-    chevron.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5 12 6.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    button.append(mark, text, chevron);
-    Object.assign(button.style, {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '8px',
-      height: '44px',
-      padding: '0 16px 0 14px',
-      border: '1px solid transparent',
-      borderRadius: '999px',
-      cursor: 'pointer',
-      color: 'inherit',
-      font: '500 14px/1 Sora, Inter, system-ui, sans-serif',
-      letterSpacing: '-.03em',
-      whiteSpace: 'nowrap',
-    });
   }
 
   /** Copy the live add-to-cart button so the launcher matches the theme without filled-in fields. */
@@ -849,9 +735,7 @@ class ScenaroWidget {
 
   private setLaunchersHidden(hidden: boolean) {
     document.querySelectorAll<HTMLElement>('[data-scenaro-launcher]').forEach((node) => {
-      const dock = node.closest('.scenaro-dock');
-      const target = dock instanceof HTMLElement ? dock : node;
-      target.style.visibility = hidden ? 'hidden' : '';
+      node.style.visibility = hidden ? 'hidden' : '';
     });
   }
 
@@ -867,13 +751,15 @@ class ScenaroWidget {
     this.iframe = iframe;
     this.isFullscreenAttachment = true;
     Object.assign(iframe.style, {
+      position: 'fixed',
+      inset: '0',
+      width: '100%',
+      height: `${this.getVisibleHeight()}px`,
       margin: '0',
       opacity: '0',
       background: '#fff',
-      overscrollBehavior: 'none',
       transition: 'opacity 220ms ease',
     });
-    placeFixedBox(iframe);
     const button = this.buildCloseButton();
     this.closeButton = button;
     const ready = whenIframeReady(iframe);
@@ -882,13 +768,10 @@ class ScenaroWidget {
     this.startViewportListeners();
     await session.play();
     if (sessionId !== this.sessionId || this.takeover !== session) return;
-    this.holdHostPage();
     await ready;
     if (sessionId !== this.sessionId || this.takeover !== session) return;
-    showExperience(iframe);
-    await session.fadeCoverOut();
-    if (sessionId !== this.sessionId || this.takeover !== session) return;
-    presentExperience(iframe);
+    iframe.style.opacity = '1';
+    void session.fadeCoverOut();
   }
 
   private async dismissTakeover(
@@ -896,11 +779,13 @@ class ScenaroWidget {
     iframe: HTMLIFrameElement | null,
     button: HTMLButtonElement | null,
   ): Promise<void> {
-    session.seal();
+    if (iframe) {
+      iframe.style.opacity = '0';
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+    }
+    await session.restore();
     iframe?.remove();
     button?.remove();
-    await session.restore();
-    this.releasePinnedHost();
     this.setLaunchersHidden(false);
   }
 
@@ -923,18 +808,16 @@ class ScenaroWidget {
       alignItems: 'center',
       justifyContent: 'center',
       boxSizing: 'border-box',
-      border: '1px solid rgba(255, 255, 255, 0.28)',
+      border: '0',
       borderRadius: '999px',
-      background: 'rgba(12, 12, 12, 0.72)',
-      color: '#fff',
-      boxShadow: 'none',
-      backdropFilter: 'blur(16px)',
+      background: '#fff',
+      color: '#1a1820',
+      boxShadow: '0 0 0 1px rgba(26, 24, 32, 0.08), 0 8px 20px rgba(26, 24, 32, 0.12)',
       cursor: 'pointer',
       lineHeight: '0',
       appearance: 'none',
       WebkitAppearance: 'none',
     });
-    close.style.setProperty('-webkit-backdrop-filter', 'blur(16px)');
     close.addEventListener('click', (event) => {
       event.stopPropagation();
       this.close();
@@ -1135,339 +1018,6 @@ class ScenaroWidget {
     // Update metadata with language
     this.updateMetadata({ language });
   }
-
-  private buttonTone(): 'black' | 'white' {
-    return (this.scriptEl?.dataset.buttonTone || '').trim().toLowerCase() === 'black' ? 'black' : 'white';
-  }
-
-  private copy() {
-    return assistantCopy(
-      this.scriptEl?.dataset ?? {},
-      this.launcherLabel('floating', 'Conseiller'),
-    );
-  }
-
-  private mountChooser() {
-    this.dismissChooser();
-    if (this.dock) {
-      this.openDock();
-      return;
-    }
-    const wide = isWideChooser();
-    const copy = this.copy();
-    const chooser = buildChooser(copy, wide ? 'popup' : 'sheet');
-    chooser.addEventListener('click', (event) => {
-      const target = event.target as HTMLElement | null;
-      const choice = target?.closest<HTMLElement>('[data-scenaro-choice]')?.dataset.scenaroChoice;
-      if (choice === 'chat') this.chooseChat();
-      if (choice === 'immersive') this.chooseImmersive();
-    });
-
-    if (!wide) {
-      const backdrop = document.createElement('div');
-      backdrop.dataset.scenaroChrome = '1';
-      Object.assign(backdrop.style, {
-        position: 'fixed',
-        inset: '0',
-        zIndex: '2147483643',
-        background: 'rgba(15, 14, 18, 0.42)',
-        opacity: '0',
-        transition: `opacity ${motionMs(280)}ms ease`,
-      });
-      backdrop.appendChild(document.createElement('span'));
-      backdrop.addEventListener('click', () => this.dismissChooser());
-      document.body.appendChild(backdrop);
-      this.chooserBackdrop = backdrop;
-      Object.assign(chooser.style, {
-        position: 'fixed',
-        left: '0',
-        right: '0',
-        bottom: '0',
-        zIndex: '2147483644',
-      });
-      document.body.appendChild(chooser);
-      requestAnimationFrame(() => {
-        backdrop.style.opacity = '1';
-        chooser.style.opacity = '1';
-        chooser.style.transform = 'translateY(0)';
-      });
-    } else {
-      const anchor = this.floatingButton?.getBoundingClientRect();
-      const right = anchor ? Math.max(16, window.innerWidth - anchor.right) : 20;
-      const bottom = anchor ? Math.max(16, window.innerHeight - anchor.top + 12) : 76;
-      Object.assign(chooser.style, {
-        position: 'fixed',
-        right: `${right}px`,
-        bottom: `${bottom}px`,
-        zIndex: '2147483644',
-      });
-      document.body.appendChild(chooser);
-      requestAnimationFrame(() => {
-        chooser.style.opacity = '1';
-        chooser.style.transform = 'translateY(0)';
-      });
-    }
-
-    this.chooser = chooser;
-    if (this.floatingButton) this.floatingButton.setAttribute('aria-expanded', 'true');
-    const first = chooser.querySelector<HTMLButtonElement>('button');
-    first?.focus();
-
-    this.onChooserKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') this.dismissChooser();
-    };
-    window.addEventListener('keydown', this.onChooserKey);
-    if (wide) {
-      this.onChooserOutside = (event: MouseEvent) => {
-        const target = event.target as Node | null;
-        if (!target || chooser.contains(target) || this.floatingButton?.contains(target)) return;
-        this.dismissChooser();
-      };
-      window.addEventListener('mousedown', this.onChooserOutside);
-    }
-  }
-
-  private openDock() {
-    if (!this.dock) return;
-      this.dock.classList.add('is-open');
-      this.floatingButton?.setAttribute('aria-expanded', 'true');
-      const choices = this.dock.querySelector<HTMLElement>('.scenaro-dock-choices');
-      if (choices) choices.inert = false;
-    this.onChooserKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') this.dismissChooser();
-    };
-    this.onChooserOutside = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target || this.dock?.contains(target)) return;
-      this.dismissChooser();
-    };
-    window.addEventListener('keydown', this.onChooserKey);
-    window.addEventListener('mousedown', this.onChooserOutside);
-  }
-
-  private dismissChooser() {
-    if (this.onChooserKey) window.removeEventListener('keydown', this.onChooserKey);
-    if (this.onChooserOutside) window.removeEventListener('mousedown', this.onChooserOutside);
-    this.onChooserKey = null;
-    this.onChooserOutside = null;
-    const choices = this.dock?.querySelector<HTMLElement>('.scenaro-dock-choices');
-    if (choices) choices.inert = true;
-    this.dock?.classList.remove('is-open');
-    this.chooser?.remove();
-    this.chooserBackdrop?.remove();
-    this.chooser = null;
-    this.chooserBackdrop = null;
-    if (this.floatingButton) this.floatingButton.setAttribute('aria-expanded', 'false');
-  }
-
-  private chooseChat() {
-    this.dismissChooser();
-    const wide = isWideChooser();
-    const publicationId = (this.scriptEl?.dataset.chatPublicationId || '').trim();
-    this.metadata = { ...this.metadata, entry: 'floating', mode: 'text', page: location.href };
-    if (!publicationId) {
-      this.mountChatWaiting(wide);
-      return;
-    }
-    this.nextShell = wide ? 'chat' : 'fade';
-    this.nextChat = true;
-    void this.open({
-      publicationId,
-      metadata: { entry: 'floating', mode: 'text', page: location.href },
-    });
-  }
-
-  private chooseImmersive() {
-    this.dismissChooser();
-    this.nextShell = isWideChooser() ? 'takeover' : 'fade';
-    this.nextChat = false;
-    void this.open({ metadata: { entry: 'floating', mode: 'immersive', page: location.href } });
-  }
-
-  /** Right-hand chat column. The page stays in place. */
-  private mountChatPanel(iframe: HTMLIFrameElement | null) {
-    const ms = motionMs(240);
-    ensureChooserStyles();
-    const overlay = document.createElement('div');
-    overlay.id = 'scenaro-overlay';
-    Object.assign(overlay.style, {
-      position: 'fixed',
-      inset: '0',
-      display: 'block',
-      background: 'rgba(26, 24, 32, 0.18)',
-      zIndex: '2147483645',
-      opacity: '0',
-      transition: `opacity ${ms}ms ease`,
-    });
-    overlay.appendChild(document.createElement('span'));
-    overlay.addEventListener('click', (event) => {
-      event.preventDefault();
-      this.close();
-    });
-    document.body.appendChild(overlay);
-    this.overlay = overlay;
-
-    const panel = document.createElement('aside');
-    panel.id = 'scenaro-panel';
-    panel.className = 'scenaro-glass-panel';
-    panel.setAttribute('aria-label', this.copy().name);
-    Object.assign(panel.style, {
-      position: 'fixed',
-      top: '0',
-      right: '0',
-      width: '40vw',
-      height: '100%',
-      zIndex: '2147483646',
-      transform: 'translateX(100%)',
-      transition: `transform ${ms}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-      overflow: 'hidden',
-      backdropFilter: 'none',
-    });
-    panel.style.setProperty('-webkit-backdrop-filter', 'none');
-    let waiting: HTMLElement | null = null;
-    if (iframe) {
-      Object.assign(iframe.style, {
-        position: 'absolute',
-        inset: '0',
-        width: '100%',
-        height: '100%',
-        zIndex: '0',
-        opacity: '0',
-        pointerEvents: 'auto',
-        transition: `opacity ${motionMs(LOADER_FADE_MS)}ms ease`,
-      });
-      panel.appendChild(iframe);
-    } else {
-      waiting = buildWaiting(this.copy());
-      waiting.style.visibility = 'hidden';
-      panel.appendChild(waiting);
-    }
-    const cover = createLoaderFrame('parent');
-    const close = this.buildCloseButton('absolute');
-    panel.append(cover, close);
-    document.body.appendChild(panel);
-    this.panel = panel;
-    this.panelMode = 'full';
-    this.setLaunchersHidden(true);
-    let settled = false;
-    requestAnimationFrame(() => {
-      overlay.style.opacity = '1';
-      if (settled) return;
-      panel.style.transform = 'translateX(0)';
-    });
-    void this.playPanelLoader(panel, cover, iframe, waiting, ms, () => {
-      settled = true;
-    });
-  }
-
-  /** The cover iframe only paints once the slide transform is gone. */
-  private async playPanelLoader(
-    panel: HTMLElement,
-    cover: HTMLIFrameElement,
-    iframe: HTMLIFrameElement | null,
-    waiting: HTMLElement | null,
-    openMs: number,
-    settle: () => void,
-  ) {
-    await wait(openMs);
-    if (this.panel !== panel) return;
-    settle();
-    panel.style.transition = 'none';
-    panel.style.transform = 'none';
-    cover.style.opacity = '1';
-    void panel.offsetWidth;
-    await wait(50);
-    if (this.panel !== panel) return;
-    const ready = iframe ? whenIframeReady(iframe) : Promise.resolve();
-    await playLoader(cover, motionMs(LOADER_HOLD_MS), 0, true);
-    await ready;
-    if (this.panel !== panel) return;
-    if (iframe) showExperience(iframe);
-    if (waiting) waiting.style.visibility = '';
-    await fadeLoader(cover, motionMs(LOADER_FADE_MS));
-    if (this.panel !== panel) return;
-    cover.remove();
-    if (iframe) presentExperience(iframe);
-  }
-
-  private mountChatWaiting(wide: boolean) {
-    if (wide) {
-      this.mountChatPanel(null);
-      return;
-    }
-    const veil = document.createElement('div');
-    veil.dataset.scenaroChrome = '1';
-    Object.assign(veil.style, {
-      position: 'fixed',
-      inset: '0',
-      zIndex: '2147483646',
-      background: '#fff',
-    });
-    const waiting = buildWaiting(this.copy());
-    waiting.style.visibility = 'hidden';
-    const cover = createLoaderFrame('parent');
-    const close = this.buildCloseButton('absolute');
-    veil.append(waiting, cover, close);
-    this.closeButton = close;
-    document.documentElement.appendChild(veil);
-    this.fadeVeil = veil;
-    this.setLaunchersHidden(true);
-    void this.playMobileLoader(cover, null, waiting, veil);
-  }
-
-  /** Mobile: same loader as the desktop cover, then the iframe. No block sweep. */
-  private async mountFade(iframe: HTMLIFrameElement, sessionId: number): Promise<void> {
-    this.setLaunchersHidden(true);
-    const cover = createLoaderFrame('viewport', this.nextChat ? undefined : IMMERSIVE_LOADER_STATUS);
-    cover.style.zIndex = '2147483647';
-    this.fadeVeil = cover;
-    this.iframe = iframe;
-    this.isFullscreenAttachment = true;
-    Object.assign(iframe.style, {
-      margin: '0',
-      opacity: '0',
-      background: '#fff',
-      overscrollBehavior: 'none',
-      zIndex: '2147483646',
-      transition: `opacity ${motionMs(LOADER_FADE_MS)}ms ease`,
-    });
-    placeFixedBox(iframe);
-    this.holdHostPage();
-    const button = this.buildCloseButton();
-    this.closeButton = button;
-    const ready = whenIframeReady(iframe);
-    document.documentElement.appendChild(cover);
-    document.documentElement.appendChild(iframe);
-    document.documentElement.appendChild(button);
-    this.startViewportListeners();
-    await this.playMobileLoader(cover, iframe, null, cover, sessionId, ready);
-  }
-
-  /** Full-screen loader, then the iframe or the waiting line. Same clock as the panel. */
-  private async playMobileLoader(
-    cover: HTMLIFrameElement,
-    iframe: HTMLIFrameElement | null,
-    waiting: HTMLElement | null,
-    veil: HTMLElement,
-    sessionId = this.sessionId,
-    ready: Promise<void> = Promise.resolve(),
-  ) {
-    await playLoader(cover, motionMs(LOADER_HOLD_MS), motionMs(LOADER_FADE_MS), true);
-    await ready;
-    if (sessionId !== this.sessionId || this.fadeVeil !== veil) return;
-    if (iframe) showExperience(iframe);
-    if (waiting) waiting.style.visibility = '';
-    await fadeLoader(cover, motionMs(LOADER_FADE_MS));
-    if (sessionId !== this.sessionId || this.fadeVeil !== veil) return;
-    cover.remove();
-    if (this.fadeVeil === veil && iframe) this.fadeVeil = null;
-    if (iframe) presentExperience(iframe);
-  }
-}
-
-function wait(ms: number): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 // Auto-initialize on load
