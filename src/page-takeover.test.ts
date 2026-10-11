@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { appearanceOf, beginPageTakeover } from './page-takeover';
+import { appearanceOf, beginPageTakeover, pinHostPage } from './page-takeover';
 
 describe('appearanceOf', () => {
   it('uses the page takeover unless the panel is chosen', () => {
@@ -32,7 +32,7 @@ describe('beginPageTakeover', () => {
     const session = beginPageTakeover({ duration: 0, sweep: 0, coverMs: 0, holdMs: 0, force: true });
     const cover = document.querySelector('[data-scenaro-cover]') as HTMLIFrameElement;
     expect(cover.srcdoc).toContain('>scenaro<');
-    expect(cover.srcdoc).toContain('Chargement en cours');
+    expect(cover.srcdoc).toContain('Expérience en chargement');
     expect(cover.srcdoc).not.toContain('propuls');
     const experience = document.createElement('iframe');
     experience.id = 'scenaro-iframe';
@@ -47,8 +47,13 @@ describe('beginPageTakeover', () => {
     await play;
     expect(experience.isConnected).toBe(true);
     expect(experience.style.transform).toBe('');
+    expect(paragraph.style.opacity).toBe('0');
+    expect(paragraph.style.visibility).toBe('hidden');
+    expect(card.style.visibility).toBe('hidden');
 
     await session.restore();
+    expect(paragraph.style.visibility).toBe('');
+    expect(paragraph.style.opacity).toBe('1');
     expect(document.documentElement.classList.contains('scenaro-clear-overlays')).toBe(false);
     expect(document.querySelector('[data-scenaro-overlay-clear]')).toBeNull();
     expect(document.querySelector('[data-scenaro-wrap]')).toBeNull();
@@ -80,6 +85,27 @@ describe('beginPageTakeover', () => {
     expect(JSON.stringify(lowCall?.frames)).toContain('translate');
     await play;
     await session.restore();
+  });
+});
+
+describe('pinHostPage', () => {
+  afterEach(() => {
+    document.body.style.cssText = '';
+    document.documentElement.style.cssText = '';
+  });
+
+  it('pins the store and puts the scroll back on release', () => {
+    document.body.style.backgroundColor = 'red';
+    const release = pinHostPage();
+    expect(document.body.style.position).toBe('fixed');
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(document.documentElement.style.overflow).toBe('hidden');
+    expect(document.body.style.backgroundColor).toBe('red');
+    release();
+    expect(document.body.style.position).toBe('');
+    expect(document.body.style.overflow).toBe('');
+    expect(document.body.style.backgroundColor).toBe('red');
+    release();
   });
 });
 

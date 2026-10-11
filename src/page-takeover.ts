@@ -10,6 +10,10 @@ export function appearanceOf(value: string | null | undefined): AppearanceName {
   return value?.trim() === 'panel' ? 'panel' : 'takeover';
 }
 
+/** Cover fade and bar length, shared by the immersive sweep and the written panel. */
+export const LOADER_FADE_MS = 220;
+export const LOADER_HOLD_MS = 2000;
+
 export interface PageTakeoverOptions {
   force?: boolean;
   duration?: number;
@@ -21,6 +25,8 @@ export interface PageTakeoverOptions {
 export interface PageTakeoverSession {
   play(): Promise<void>;
   fadeCoverOut(): Promise<void>;
+  /** Puts the white cover back in front so the store stays hidden while the iframe leaves. */
+  seal(): void;
   restore(): Promise<void>;
 }
 
@@ -71,8 +77,8 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   const reduce = !options.force && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const duration = options.duration ?? (reduce ? 180 : 640);
   const sweep = reduce ? 0 : (options.sweep ?? 1000);
-  const coverMs = options.coverMs ?? 220;
-  const holdMs = options.holdMs ?? 2000;
+  const coverMs = options.coverMs ?? LOADER_FADE_MS;
+  const holdMs = options.holdMs ?? LOADER_HOLD_MS;
   const overlayMs = options.duration === 0 && options.sweep === 0 ? 0 : (reduce ? 0 : 180);
 
   const wrapped = wrapLooseText(document.body);
@@ -103,11 +109,12 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
 
   const anims: Animation[] = [];
   let restored = false;
-  let coverShown = false;
   let playing: Promise<void> | null = null;
   let restoring: Promise<void> | null = null;
   let removeOverlayClear = () => {};
   let restoreClipping = () => {};
+  let releaseDeparted = () => {};
+  const stopCoverTrack = trackCover(frame);
 
   const play = (): Promise<void> => {
     if (restored) return Promise.resolve();
@@ -121,17 +128,18 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
   const restore = (): Promise<void> => {
     if (restoring) return restoring;
     restored = true;
-    cancel(anims);
     restoring = runRestore();
     return restoring;
   };
 
-  const fadeCoverOut = (): Promise<void> => {
-    coverShown = false;
-    return fadeOpacity(frame, 1, 0, coverMs);
+  const fadeCoverOut = (): Promise<void> => fadeOpacity(frame, 1, 0, coverMs);
+
+  const seal = (): void => {
+    cancel(frame.getAnimations?.() ?? []);
+    frame.style.setProperty('opacity', '1', 'important');
   };
 
-  return { play, fadeCoverOut, restore };
+  return { play, fadeCoverOut, seal, restore };
 
   async function runPlay(): Promise<void> {
     removeOverlayClear = clearPageOverlays(overlayMs);
@@ -152,21 +160,30 @@ export function beginPageTakeover(options: PageTakeoverOptions = {}): PageTakeov
     }
     await sleep(coverAt);
     if (restored) return;
-    coverShown = true;
     releasePointer();
     startCoverLoader(frame, holdMs);
     await fadeOpacity(frame, 0, 1, coverMs);
     if (restored) return;
     if (holdMs > 0) await sleep(holdMs);
+    if (restored) return;
+    releaseDeparted = holdDeparted(items);
   }
 
   async function runRestore(): Promise<void> {
     if (playing) await playing.catch(() => undefined);
+    // The cover stays opaque until the page is whole again underneath it.
+    // Releasing the swept elements first is what made the graphics return
+    // while the experience was still open.
+    cancel(frame.getAnimations?.() ?? []);
+    frame.style.removeProperty('opacity');
+    frame.style.opacity = '1';
     cancel(anims);
-    if (coverShown) await fadeOpacity(frame, 1, 0, coverMs > 0 ? 280 : 0);
-    frame.remove();
+    releaseDeparted();
     removeOverlayClear();
     restoreClipping();
+    await fadeOpacity(frame, 1, 0, coverMs > 0 ? 280 : 0);
+    frame.remove();
+    stopCoverTrack();
     restoreSheet();
     unwrap(wrapped);
     releasePointer();
@@ -493,6 +510,128 @@ function fadeOpacity(el: HTMLElement, from: number, to: number, ms: number): Pro
   }
 }
 
+export interface ViewportBox {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+/** The rectangle Chrome is actually showing. The layout viewport is taller while the URL bar is out. */
+export function visibleViewportBox(win: Window = window): ViewportBox {
+  const viewport = win.visualViewport;
+  return {
+    top: viewport?.offsetTop ?? 0,
+    left: viewport?.offsetLeft ?? 0,
+    width: Math.round(viewport?.width ?? win.innerWidth),
+    height: Math.round(viewport?.height ?? win.innerHeight),
+  };
+}
+
+/** Pins an element to the visible viewport. Theme CSS must not be able to stretch it with 100vh. */
+export function placeFixedBox(el: HTMLElement, box: ViewportBox = visibleViewportBox()): void {
+  el.style.setProperty('position', 'fixed', 'important');
+  el.style.setProperty('top', `${box.top}px`, 'important');
+  el.style.setProperty('left', `${box.left}px`, 'important');
+  el.style.setProperty('width', `${box.width}px`, 'important');
+  el.style.setProperty('height', `${box.height}px`, 'important');
+  el.style.setProperty('right', 'auto', 'important');
+  el.style.setProperty('bottom', 'auto', 'important');
+  el.style.setProperty('max-width', 'none', 'important');
+  el.style.setProperty('margin', '0', 'important');
+}
+
+function trackCover(frame: HTMLIFrameElement): () => void {
+  const place = () => placeFixedBox(frame);
+  place();
+  window.addEventListener('resize', place);
+  window.addEventListener('orientationchange', place);
+  const viewport = window.visualViewport;
+  viewport?.addEventListener('resize', place);
+  viewport?.addEventListener('scroll', place);
+  return () => {
+    window.removeEventListener('resize', place);
+    window.removeEventListener('orientationchange', place);
+    viewport?.removeEventListener('resize', place);
+    viewport?.removeEventListener('scroll', place);
+  };
+}
+
+/** Writes the swept-away state onto the elements so a finished animation cannot bring them back. */
+function holdDeparted(items: Item[]): () => void {
+  const saved = items.map((item) => ({
+    el: item.el,
+    opacity: item.el.style.getPropertyValue('opacity'),
+    opacityPriority: item.el.style.getPropertyPriority('opacity'),
+    visibility: item.el.style.getPropertyValue('visibility'),
+    visibilityPriority: item.el.style.getPropertyPriority('visibility'),
+  }));
+  for (const item of saved) {
+    item.el.style.setProperty('opacity', '0', 'important');
+    item.el.style.setProperty('visibility', 'hidden', 'important');
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const item of saved) {
+      if (item.opacity) item.el.style.setProperty('opacity', item.opacity, item.opacityPriority);
+      else item.el.style.removeProperty('opacity');
+      if (item.visibility) item.el.style.setProperty('visibility', item.visibility, item.visibilityPriority);
+      else item.el.style.removeProperty('visibility');
+    }
+  };
+}
+
+/** Keeps the store from sliding out from under the open iframe. Android Chrome ignores overflow:hidden alone. */
+export function pinHostPage(): () => void {
+  const html = document.documentElement;
+  const body = document.body;
+  const scrollY = window.scrollY || html.scrollTop || body.scrollTop || 0;
+  const saved: { el: HTMLElement; prop: string; value: string; priority: string }[] = [];
+  const remember = (el: HTMLElement, prop: string) => {
+    saved.push({
+      el,
+      prop,
+      value: el.style.getPropertyValue(prop),
+      priority: el.style.getPropertyPriority(prop),
+    });
+  };
+  for (const el of [html, body]) {
+    for (const prop of ['overflow', 'overscroll-behavior']) remember(el, prop);
+    el.style.setProperty('overflow', 'hidden', 'important');
+    el.style.setProperty('overscroll-behavior', 'none', 'important');
+  }
+  for (const prop of ['position', 'top', 'left', 'right', 'width']) remember(body, prop);
+  body.style.setProperty('position', 'fixed', 'important');
+  body.style.setProperty('top', `-${scrollY}px`, 'important');
+  body.style.setProperty('left', '0', 'important');
+  body.style.setProperty('right', '0', 'important');
+  body.style.setProperty('width', '100%', 'important');
+  const stop = (event: Event) => {
+    if (event.cancelable) event.preventDefault();
+  };
+  const snap = () => {
+    if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
+  };
+  window.addEventListener('touchmove', stop, { passive: false, capture: true });
+  window.addEventListener('wheel', stop, { passive: false, capture: true });
+  window.addEventListener('scroll', snap);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    window.removeEventListener('touchmove', stop, { capture: true });
+    window.removeEventListener('wheel', stop, { capture: true });
+    window.removeEventListener('scroll', snap);
+    for (const item of saved) {
+      if (item.value) item.el.style.setProperty(item.prop, item.value, item.priority);
+      else item.el.style.removeProperty(item.prop);
+    }
+    window.scrollTo(0, scrollY);
+  };
+}
+
 function lockScroll(): () => void {
   // Block the gesture only. Pinning the body with position:fixed and
   // overflow:hidden clips Magento to one screen, so the lower products vanish.
@@ -564,15 +703,74 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function coverDocument(): string {
-  return `<!DOCTYPE html><html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@800&display=swap"><style>
+export const LOADER_STATUS = 'Chargement en cours';
+export const IMMERSIVE_LOADER_STATUS = 'Expérience en chargement';
+
+/** White cover that fills its parent. The immersive sweep pins it to the viewport. */
+export function createLoaderFrame(
+  pin: 'viewport' | 'parent' = 'parent',
+  status = LOADER_STATUS,
+): HTMLIFrameElement {
+  const frame = document.createElement('iframe');
+  frame.dataset.scenaroCover = '1';
+  frame.setAttribute('aria-hidden', 'true');
+  frame.setAttribute('tabindex', '-1');
+  frame.srcdoc = coverDocument(status);
+  frame.style.cssText = pin === 'viewport'
+    ? 'position:fixed;inset:0;width:100vw;height:100vh;border:0;margin:0;padding:0;background:#fff;z-index:2147483646;opacity:0;cursor:default;'
+    : 'position:absolute;inset:0;width:100%;height:100%;border:0;margin:0;padding:0;background:#fff;z-index:1;opacity:0;';
+  frame.style.setProperty('pointer-events', 'none', 'important');
+  return frame;
+}
+
+/** Fade the cover in and run the bar for holdMs, the same clock as the immersive loader. */
+export function playLoader(frame: HTMLIFrameElement, holdMs = LOADER_HOLD_MS, fadeMs = LOADER_FADE_MS, shown = false): Promise<void> {
+  startCoverLoader(frame, holdMs);
+  if (shown) revealCover(frame);
+  return fadeOpacity(frame, 0, 1, fadeMs).then(() => sleep(holdMs));
+}
+
+/** The panel iframe does not always run the cover's fade, so the mark and label are shown directly. */
+function revealCover(frame: HTMLIFrameElement): void {
+  const started = performance.now();
+  const show = () => {
+    const nodes = frame.contentDocument?.querySelectorAll('.brand, .status');
+    if (!nodes || nodes.length === 0) return false;
+    nodes.forEach((node) => {
+      if (node.nodeType !== 1 || !('style' in node)) return;
+      const el = node as HTMLElement;
+      el.style.animation = 'none';
+      el.style.opacity = '1';
+      el.style.transform = 'none';
+    });
+    const body = frame.contentDocument?.body;
+    if (body) {
+      body.classList.remove('run');
+      void body.offsetWidth;
+      body.classList.add('run');
+    }
+    return true;
+  };
+  const tick = () => {
+    if (show() || performance.now() - started > 1000) return;
+    window.setTimeout(tick, 30);
+  };
+  tick();
+}
+
+export function fadeLoader(frame: HTMLIFrameElement, fadeMs = LOADER_FADE_MS): Promise<void> {
+  return fadeOpacity(frame, 1, 0, fadeMs);
+}
+
+function coverDocument(status: string): string {
+  return `<!DOCTYPE html><html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;800&display=swap"><style>
     html,body{margin:0;height:100%;background:#fff;color:#1a1820;}
     body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:32px;font-family:Sora,Inter,system-ui,sans-serif;}
     .brand{display:flex;align-items:center;justify-content:center;gap:.2em;font-size:32px;font-weight:800;letter-spacing:-.04em;line-height:1;opacity:0;transform:translateY(12px);}
     .brand svg{width:.92em;height:.92em;display:block;flex:none;transform:translateY(.04em);}
     .brand span{line-height:1;}
     .status{display:flex;flex-direction:column;align-items:center;gap:14px;opacity:0;transform:translateY(12px);}
-    .status p{margin:0;font-size:13px;letter-spacing:.04em;color:#8a847c;}
+    .status p{margin:0;font-size:14px;font-weight:500;letter-spacing:-.03em;line-height:1;color:#1a1820;white-space:nowrap;}
     .track{width:148px;height:2px;border-radius:999px;background:#eceae6;overflow:hidden;}
     .bar{height:100%;width:0;border-radius:inherit;background:#1a1820;animation:scenaro-load 2s cubic-bezier(.4,0,.2,1) forwards;animation-play-state:paused;}
     .run .brand{animation:scenaro-in .72s cubic-bezier(.22,1,.36,1) forwards;}
@@ -592,9 +790,39 @@ function coverDocument(): string {
       <span>scenaro</span>
     </div>
     <div class="status">
-      <p>Chargement en cours</p>
+      <p>${status.replace(/[&<>]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char] ?? char))}</p>
       <div class="track"><div class="bar"></div></div>
     </div>
+    <script>
+      (function () {
+        function fit() {
+          var brand = document.querySelector('.brand');
+          var line = document.querySelector('.status p');
+          var track = document.querySelector('.track');
+          if (!brand || !line) return;
+          var target = brand.getBoundingClientRect().width;
+          if (target < 8) return;
+          line.style.letterSpacing = '0px';
+          var size = 14;
+          line.style.fontSize = size + 'px';
+          while (size > 11 && line.getBoundingClientRect().width > target) {
+            size -= 0.5;
+            line.style.fontSize = size + 'px';
+          }
+          var lo = -0.6, hi = 8, mid;
+          for (var i = 0; i < 16; i++) {
+            mid = (lo + hi) / 2;
+            line.style.letterSpacing = mid.toFixed(3) + 'px';
+            if (line.getBoundingClientRect().width < target) lo = mid;
+            else hi = mid;
+          }
+          line.style.letterSpacing = lo.toFixed(3) + 'px';
+          if (track) track.style.width = target + 'px';
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+        window.addEventListener('load', fit);
+      })();
+    </script>
   </body></html>`;
 }
 
@@ -603,7 +831,9 @@ function startCoverLoader(frame: HTMLIFrameElement, ms: number): void {
     const body = frame.contentDocument?.body;
     if (!body) return;
     const bar = body.querySelector('.bar');
-    if (bar instanceof HTMLElement && ms > 0) bar.style.animationDuration = `${ms}ms`;
+    if (bar && bar.nodeType === 1 && 'style' in bar && ms > 0) {
+      (bar as HTMLElement).style.animationDuration = `${ms}ms`;
+    }
     body.classList.add('run');
   };
   if (frame.contentDocument?.body) arm();
@@ -611,13 +841,7 @@ function startCoverLoader(frame: HTMLIFrameElement, ms: number): void {
 }
 
 function coverWithWhiteFrame(): HTMLIFrameElement {
-  const frame = document.createElement('iframe');
-  frame.dataset.scenaroCover = '1';
-  frame.setAttribute('aria-hidden', 'true');
-  frame.setAttribute('tabindex', '-1');
-  frame.srcdoc = coverDocument();
-  frame.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;border:0;margin:0;padding:0;background:#fff;z-index:2147483646;opacity:0;cursor:default;';
-  frame.style.setProperty('pointer-events', 'none', 'important');
+  const frame = createLoaderFrame('viewport', IMMERSIVE_LOADER_STATUS);
   document.documentElement.appendChild(frame);
   return frame;
 }
