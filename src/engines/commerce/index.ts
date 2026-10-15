@@ -1,6 +1,7 @@
 import { MagentoConnector } from '../../connectors/magento';
 import { ShopifyConnector } from '../../connectors/shopify';
 import { detectStorefront } from '../../storefront';
+import { postToIframe } from '../../message-boundary';
 import { CartRequest, CartResponse, Connector, Engine } from '../../types';
 
 export class CommerceEngine implements Engine {
@@ -124,7 +125,7 @@ export class CommerceEngine implements Engine {
         data,
         error
       };
-      this.iframe.contentWindow.postMessage(response, '*'); // In production, replace '*' with specific origin
+      postToIframe(this.iframe, response);
     }
   }
 }

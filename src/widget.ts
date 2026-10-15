@@ -2,7 +2,8 @@ import { presentExperience, showExperience, whenIframeReady } from './experience
 import { assistantCopy, buildChooser, buildDockChoices, buildWaiting, ensureChooserStyles, isWideChooser, motionMs } from './chooser';
 import { AppearanceName, appearanceOf, beginPageTakeover, createLoaderFrame, fadeLoader, IMMERSIVE_LOADER_STATUS, LOADER_FADE_MS, LOADER_HOLD_MS, PageTakeoverSession, pinHostPage, placeFixedBox, playLoader, visibleViewportBox } from './page-takeover';
 import { detectStorefront } from './storefront';
-import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroEventPayload, ScenaroOpenConfig } from './types';
+import { isIframeMessage, isWidgetPayload, postToIframe, redirectUrl } from './message-boundary';
+import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroOpenConfig } from './types';
 
 type LaunchShell = 'appearance' | 'takeover' | 'fade' | 'chat';
 
@@ -14,7 +15,7 @@ interface WakeLockSentinel {
   release(): Promise<void>;
 }
 
-class ScenaroWidget {
+export class ScenaroWidget {
   private publicationId: string;
   private entries: string[] = [];
   private appearance: AppearanceName = 'takeover';
@@ -422,7 +423,7 @@ class ScenaroWidget {
     };
 
     if (this.iframe && this.iframe.contentWindow) {
-      this.iframe.contentWindow.postMessage(response, '*');
+      postToIframe(this.iframe, response);
     }
   }
 
@@ -1040,9 +1041,8 @@ class ScenaroWidget {
   }
 
   private handleMessage(event: MessageEvent) {
-      // Security check: in production, check event.origin against allowed origins
-      
-      const payload = event.data as ScenaroEventPayload;
+      if (!isIframeMessage(event, this.iframe) || !isWidgetPayload(event.data)) return;
+      const payload = event.data;
 
       // Check if this is a capability request
       if (payload.type === 'SCENARO_CAPABILITY_REQUEST') {
@@ -1089,8 +1089,8 @@ class ScenaroWidget {
               this.close();
               break;
           case 'SCENARO_REDIRECT':
-              const url = payload.url;
-              if (url && typeof url === 'string') {
+              const url = payload.url && redirectUrl(payload.url, window.location.href);
+              if (url) {
                   window.location.href = url;
               }
               break;
@@ -1099,22 +1099,22 @@ class ScenaroWidget {
 
   private sendMetadataToIframe() {
     if (this.iframe && Object.keys(this.metadata).length > 0) {
-      this.iframe.contentWindow?.postMessage({
+      postToIframe(this.iframe, {
         type: 'SCENARO_METADATA',
         metadata: this.metadata
-      }, '*');
+      });
     }
   }
 
   /** Send cart error response to iframe when engine is not available (avoids iframe timeout). */
   private sendCartErrorToIframe(requestId: string, error: string): void {
     if (this.iframe?.contentWindow) {
-      this.iframe.contentWindow.postMessage({
+      postToIframe(this.iframe, {
         type: 'SCENARO_CART_RESPONSE',
         requestId,
         success: false,
         error
-      }, '*');
+      });
     }
   }
 
