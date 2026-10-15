@@ -3,6 +3,7 @@ import { assistantCopy, buildChooser, buildDockChoices, buildWaiting, ensureChoo
 import { AppearanceName, appearanceOf, beginPageTakeover, createLoaderFrame, fadeLoader, IMMERSIVE_LOADER_STATUS, LOADER_FADE_MS, LOADER_HOLD_MS, PageTakeoverSession, pinHostPage, placeFixedBox, playLoader, visibleViewportBox } from './page-takeover';
 import { detectStorefront } from './storefront';
 import { isIframeMessage, isWidgetPayload, postToIframe, redirectUrl } from './message-boundary';
+import { locateExperience } from './experience-location';
 import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroOpenConfig } from './types';
 
 type LaunchShell = 'appearance' | 'takeover' | 'fade' | 'chat';
@@ -146,7 +147,7 @@ export class ScenaroWidget {
 
   public close() {
     this.dismissChooser();
-    if (!this.iframe && !this.panel && !this.takeover && !this.fadeVeil) return;
+    if (!this.iframe && !this.panel && !this.takeover && !this.fadeVeil && !this.opening) return;
     this.sessionId += 1;
 
     this.stopViewportListeners();
@@ -437,22 +438,13 @@ export class ScenaroWidget {
       return;
     }
 
-    // data-iframe-url skips embed.scenaro.io. That host sends X-Frame-Options: DENY,
-    // which Chrome shows inside the iframe as "refused to connect". The chat
-    // publication stays on embed.scenaro.io even when the immersive URL is overridden.
+    // Resolve the real experience before pinning its origin. A redirecting
+    // embed URL would otherwise reject legitimate messages from the final host.
+    const sessionId = this.sessionId;
     const embedOverride = this.chatEmbed ? '' : this.scriptEl?.dataset.iframeUrl;
-    const baseUrl = embedOverride && embedOverride.trim() !== ''
-      ? embedOverride.trim()
-      : `https://embed.scenaro.io/${id}`;
-    const url = new URL(baseUrl);
-
-    // Add language from metadata if available
-    if (this.metadata.language) {
-      url.searchParams.append('language', this.metadata.language);
-    }
-
-    url.searchParams.set('scenaroTransition', '1');
-    iframe.src = url.toString();
+    iframe.src = await locateExperience(id, this.scriptEl?.src, embedOverride,
+      typeof this.metadata.language === 'string' ? this.metadata.language : undefined);
+    if (sessionId !== this.sessionId) return;
     void whenIframeReady(iframe);
     iframe.allow = "microphone *; autoplay *";
     iframe.style.border = 'none';
@@ -462,7 +454,6 @@ export class ScenaroWidget {
 
     // Prefer #scenaro-container so iframe is in-page (not fullscreen). Wait for it if not yet in DOM.
     // The floating chooser picks its own shell and does not fall into that container.
-    const sessionId = this.sessionId;
     const container = this.shell === 'appearance' ? await this.getContainerOrWait() : null;
     if (sessionId !== this.sessionId) {
       iframe.remove();

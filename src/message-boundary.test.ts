@@ -3,9 +3,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isWidgetPayload, postToIframe, redirectUrl } from './message-boundary';
 import { ScenaroWidget } from './widget';
 
-afterEach(() => document.body.replaceChildren());
+afterEach(() => { document.body.replaceChildren(); vi.unstubAllGlobals(); });
 
 describe('widget message dispatch', () => {
+  it('does not mount an iframe after closing during publication lookup', async () => {
+    let complete!: (response: unknown) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { complete = resolve; })));
+    const widget = new ScenaroWidget();
+    const opening = widget.open({ publicationId: 'cancelled-publication' });
+    widget.close();
+    complete({ ok: true, json: async () => ({ configuration: { iframe_url: 'https://experience.example' } }) });
+    await opening;
+    expect(document.getElementById('scenaro-iframe')).toBeNull();
+  });
   it('only forwards requests from the active iframe and its configured origin', () => {
     const iframe = document.createElement('iframe');
     iframe.src = 'https://experience.example/shop';
