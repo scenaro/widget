@@ -1,5 +1,5 @@
 import { Connector } from '../../types';
-import { normalizeShopifyCart, shopifyVariantId, StorefrontCart } from '../cart';
+import { cartAddId, normalizeShopifyCart, StorefrontCart } from '../cart';
 
 interface ShopifyAjaxItem {
   id: string | number;
@@ -70,7 +70,7 @@ export const ShopifyConnector: Connector = {
   },
 
   async addToCart(params: { productId: string | number; variantId?: string | number; qty?: number }): Promise<StorefrontCart> {
-    const variantId = shopifyVariantId(params);
+    const variantId = cartAddId(params);
     const item: ShopifyAjaxItem = {
       id: /^\d+$/.test(variantId) ? Number(variantId) : variantId,
       quantity: params.qty ?? 1,
@@ -88,5 +88,18 @@ export const ShopifyConnector: Connector = {
 
   async clearCart(): Promise<StorefrontCart> {
     return mutate('/cart/clear.js', {});
+  },
+
+  async markConversation(mark): Promise<void> {
+    await shopifyCart('/cart/update.js', {
+      method: 'POST',
+      body: JSON.stringify({
+        attributes: {
+          scenaro_user_id: mark.userId,
+          scenaro_conversation_id: mark.conversationId,
+          scenaro_publication_id: mark.publicationId,
+        },
+      }),
+    });
   },
 };

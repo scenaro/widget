@@ -2,7 +2,7 @@ import { MagentoConnector } from '../../connectors/magento';
 import { ShopifyConnector } from '../../connectors/shopify';
 import { detectStorefront } from '../../storefront';
 import { postToIframe } from '../../message-boundary';
-import { CartRequest, CartResponse, Connector, Engine } from '../../types';
+import { CartMark, CartRequest, CartResponse, Connector, Engine } from '../../types';
 
 export class CommerceEngine implements Engine {
   name = 'commerce';
@@ -35,6 +35,11 @@ export class CommerceEngine implements Engine {
 
   setIframe(iframe: HTMLIFrameElement) {
       this.iframe = iframe;
+  }
+
+  async markConversation(mark: CartMark): Promise<void> {
+    if (!this.connector?.markConversation) return;
+    await this.connector.markConversation(mark);
   }
 
   async handleCartRequest(payload: CartRequest): Promise<void> {

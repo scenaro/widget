@@ -11,7 +11,9 @@ export interface ScenaroOpenConfig {
 }
 
 export type ScenaroEventType =
+  | 'SCENARO_SESSION_STATE'
   | 'SCENARO_READY'
+  | 'SCENARO_CLOSE_VISIBILITY'
   | 'SCENARO_END'
   | 'SCENARO_REDIRECT'
   | 'SCENARO_CART_LIST_REQUEST'
@@ -27,6 +29,12 @@ export interface ScenaroEventPayload<T = any> {
   type: ScenaroEventType;
   data?: T;
   requestId?: string;
+  /** Close control visibility requested by the active iframe. */
+  visible?: boolean;
+  /** Set when type is SCENARO_SESSION_STATE. */
+  active?: boolean;
+  conversationId?: string;
+  userId?: string | number | null;
   /** Set when type is SCENARO_REDIRECT: URL for parent to navigate to */
   url?: string;
 }
@@ -92,6 +100,12 @@ export interface CapabilityResponse {
 
 export type CartRequest = CartListRequest | CartAddRequest | CartUpdateRequest | CartRemoveRequest | CartClearRequest;
 
+export interface CartMark {
+  userId: string;
+  conversationId: string;
+  publicationId: string;
+}
+
 export interface Connector {
   name: string;
   refreshCart(): Promise<void>;
@@ -100,6 +114,8 @@ export interface Connector {
   updateCart?(params: { itemId: string | number; qty: number }): Promise<any>;
   removeCart?(params: { itemId: string | number }): Promise<any>;
   clearCart?(): Promise<any>;
+  /** Writes the conversation onto the cart so a later checkout keeps it. */
+  markConversation?(mark: CartMark): Promise<void>;
 }
 
 export interface Engine {
@@ -109,4 +125,5 @@ export interface Engine {
   connect(): Promise<void>;
   onEnd(): Promise<void>;
   handleCartRequest?(payload: CartRequest): Promise<void>;
+  markConversation?(mark: CartMark): Promise<void>;
 }

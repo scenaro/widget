@@ -87,3 +87,14 @@ See [TEST_CART_CRUD.md](./TEST_CART_CRUD.md) for testing cart CRUD operations in
 
 - [CSP Requirements](./CSP_REQUIREMENTS.md) - Content Security Policy configuration
 - [Test Cart CRUD](./TEST_CART_CRUD.md) - Testing guide for cart operations
+
+### Experience-controlled close button
+
+The widget never renders a close button, including during loading. The experience
+owns its placement and styling and sends `SCENARO_END` to close the iframe and
+restore the host page. The legacy `SCENARO_CLOSE_VISIBILITY` message is ignored.
+
+For a seamless entrance, send `SCENARO_VIEW_READY` after mounting. The widget makes
+the iframe fully opaque beneath the loader, waits for a paint, then sends
+`SCENARO_PRESENT` and fades only the loader. Do not start an additional iframe
+opacity transition during this handoff.

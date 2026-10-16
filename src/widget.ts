@@ -1,4 +1,4 @@
-import { presentExperience, showExperience, whenIframeReady } from './experience-transition';
+import { presentExperience, prepareExperience, whenIframeReady } from './experience-transition';
 import { assistantCopy, buildChooser, buildDockChoices, buildWaiting, ensureChooserStyles, isWideChooser, motionMs } from './chooser';
 import { AppearanceName, appearanceOf, beginPageTakeover, createLoaderFrame, fadeLoader, IMMERSIVE_LOADER_STATUS, LOADER_FADE_MS, LOADER_HOLD_MS, PageTakeoverSession, pinHostPage, placeFixedBox, playLoader, visibleViewportBox } from './page-takeover';
 import { detectStorefront } from './storefront';
@@ -12,7 +12,7 @@ type LaunchShell = 'appearance' | 'takeover' | 'fade' | 'chat';
 let parentOverflow: { html: string; body: string } | null = null;
 
 /** Wake Lock API (screen awake) - optional on Navigator */
-interface WakeLockSentinel {
+interface WakeLockSentinel extends EventTarget {
   release(): Promise<void>;
 }
 
@@ -25,8 +25,8 @@ export class ScenaroWidget {
   private panel: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
   private takeover: PageTakeoverSession | null = null;
-  private closeButton: HTMLButtonElement | null = null;
   private sessionId = 0;
+  private stampedConversation = '';
   private opening = false;
   private panelMode: 'docked' | 'full' = 'docked';
   private engine: any = null; // Typed as any because it might be loaded dynamically
@@ -38,6 +38,8 @@ export class ScenaroWidget {
   private viewportResizeHandler: (() => void) | null = null;
   /** Puts the store back where it was when the fullscreen iframe closes. */
   private releaseHostPage: (() => void) | null = null;
+  private experienceActive = false;
+  private wakeLockPending = false;
   private wakeLockSentinel: WakeLockSentinel | null = null;
   private visibilityChangeHandler: (() => void) | null = null;
   private shell: LaunchShell = 'appearance';
@@ -151,6 +153,7 @@ export class ScenaroWidget {
     this.sessionId += 1;
 
     this.stopViewportListeners();
+    this.experienceActive = false;
     this.stopWakeLockVisibilityReacquire();
     this.releaseWakeLock();
     this.setParentScrollbarsHidden(false);
@@ -161,25 +164,22 @@ export class ScenaroWidget {
     const overlay = this.overlay;
     const iframe = this.iframe;
     const takeover = this.takeover;
-    const closeButton = this.closeButton;
     const fadeVeil = this.fadeVeil;
     this.panel = null;
     this.overlay = null;
     this.iframe = null;
     this.takeover = null;
-    this.closeButton = null;
     this.fadeVeil = null;
     this.emit('close');
 
     if (takeover) {
-      void this.dismissTakeover(takeover, iframe, closeButton);
+      void this.dismissTakeover(takeover, iframe);
       return;
     }
 
     this.releasePinnedHost();
     this.setLaunchersHidden(false);
     fadeVeil?.remove();
-    closeButton?.remove();
 
     if (overlay) {
       overlay.style.opacity = '0';
@@ -232,15 +232,11 @@ export class ScenaroWidget {
     }
   }
 
-  /** Fit the open iframe, its cover and the close button to the visible viewport, including Chrome's URL bar. */
+  /** Fit the open iframe, and its cover to the visible viewport, including Chrome's URL bar. */
   private applyViewportHeight(): void {
     const box = visibleViewportBox();
     if (this.panel && this.panelMode === 'full') this.panel.style.height = `${box.height}px`;
     if (this.isFullscreenAttachment && this.iframe) placeFixedBox(this.iframe, box);
-    if (this.isFullscreenAttachment && this.closeButton) {
-      this.closeButton.style.top = `${box.top + 16}px`;
-      this.closeButton.style.left = `${box.left + 16}px`;
-    }
     if (this.fadeVeil) placeFixedBox(this.fadeVeil, box);
   }
 
@@ -276,30 +272,35 @@ export class ScenaroWidget {
   /** Acquire screen wake lock so device doesn't sleep while iframe is open. No-op if unsupported. */
   private async acquireWakeLock(): Promise<void> {
     const nav = navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLockSentinel> } };
-    if (!nav.wakeLock) return;
+    if (!nav.wakeLock || !this.experienceActive || !this.iframe || this.wakeLockSentinel || this.wakeLockPending || document.visibilityState !== 'visible') return;
+    const session = this.sessionId;
+    this.wakeLockPending = true;
     try {
-      this.wakeLockSentinel = await nav.wakeLock.request('screen');
+      const lock = await nav.wakeLock.request('screen');
+      if (!this.experienceActive || session !== this.sessionId || !this.iframe) {
+        await lock.release();
+        return;
+      }
+      this.wakeLockSentinel = lock;
+      lock.addEventListener('release', () => {
+        if (this.wakeLockSentinel === lock) this.wakeLockSentinel = null;
+      });
     } catch {
-      // Unsupported or denied; fail silently
-    }
+      // Unsupported or denied; fail silently.
+    } finally { this.wakeLockPending = false; }
   }
 
-  /** Release wake lock. Call on close. */
   private async releaseWakeLock(): Promise<void> {
-    if (!this.wakeLockSentinel) return;
-    try {
-      await this.wakeLockSentinel.release();
-    } catch {
-      // ignore
-    }
+    const lock = this.wakeLockSentinel;
     this.wakeLockSentinel = null;
+    try { await lock?.release(); } catch { /* already released */ }
   }
 
   /** Re-acquire wake lock when tab becomes visible and iframe is still open. */
   private startWakeLockVisibilityReacquire(): void {
     if (this.visibilityChangeHandler) return;
     this.visibilityChangeHandler = () => {
-      if (document.visibilityState === 'visible' && this.iframe) {
+      if (document.visibilityState === 'visible' && this.iframe && this.experienceActive) {
         this.acquireWakeLock();
       }
     };
@@ -476,8 +477,7 @@ export class ScenaroWidget {
     }
 
     if (sessionId !== this.sessionId) return;
-    this.acquireWakeLock();
-    this.startWakeLockVisibilityReacquire();
+    // The mounted welcome/chooser must not keep the host page awake.
   }
 
   /** Wait briefly for #scenaro-container (e.g. React mount) so iframe can be in-page, not fullscreen. */
@@ -596,7 +596,9 @@ export class ScenaroWidget {
       shell.append(button, buildDockChoices(this.copy()));
       shell.addEventListener('click', (event) => {
         const target = event.target as HTMLElement | null;
-        const choice = target?.closest<HTMLElement>('[data-scenaro-choice]')?.dataset.scenaroChoice;
+        const choiceEl = target?.closest<HTMLButtonElement>('[data-scenaro-choice]');
+        if (!choiceEl || choiceEl.disabled) return;
+        const choice = choiceEl.dataset.scenaroChoice;
         if (choice === 'chat') this.chooseChat();
         if (choice === 'immersive') this.chooseImmersive();
       });
@@ -863,21 +865,20 @@ export class ScenaroWidget {
       opacity: '0',
       background: '#fff',
       overscrollBehavior: 'none',
-      transition: 'opacity 220ms ease',
+      transition: 'none',
+      zIndex: '2147483645',
     });
     placeFixedBox(iframe);
-    const button = this.buildCloseButton();
-    this.closeButton = button;
     const ready = whenIframeReady(iframe);
     document.documentElement.appendChild(iframe);
-    document.documentElement.appendChild(button);
     this.startViewportListeners();
     await session.play();
     if (sessionId !== this.sessionId || this.takeover !== session) return;
     this.holdHostPage();
     await ready;
     if (sessionId !== this.sessionId || this.takeover !== session) return;
-    showExperience(iframe);
+    await prepareExperience(iframe);
+    if (sessionId !== this.sessionId || this.takeover !== session) return;
     await session.fadeCoverOut();
     if (sessionId !== this.sessionId || this.takeover !== session) return;
     presentExperience(iframe);
@@ -886,52 +887,12 @@ export class ScenaroWidget {
   private async dismissTakeover(
     session: PageTakeoverSession,
     iframe: HTMLIFrameElement | null,
-    button: HTMLButtonElement | null,
   ): Promise<void> {
     session.seal();
     iframe?.remove();
-    button?.remove();
     await session.restore();
     this.releasePinnedHost();
     this.setLaunchersHidden(false);
-  }
-
-  private buildCloseButton(position: 'fixed' | 'absolute' = 'fixed'): HTMLButtonElement {
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.dataset.scenaroChrome = '1';
-    close.setAttribute('aria-label', 'Fermer Scenaro');
-    close.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false" style="display:block"><path d="M4.25 4.25 L11.75 11.75 M11.75 4.25 L4.25 11.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-    Object.assign(close.style, {
-      position,
-      top: '16px',
-      left: '16px',
-      zIndex: position === 'fixed' ? '2147483647' : '2',
-      width: '36px',
-      height: '36px',
-      margin: '0',
-      padding: '0',
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      boxSizing: 'border-box',
-      border: '1px solid rgba(255, 255, 255, 0.28)',
-      borderRadius: '999px',
-      background: 'rgba(12, 12, 12, 0.72)',
-      color: '#fff',
-      boxShadow: 'none',
-      backdropFilter: 'blur(16px)',
-      cursor: 'pointer',
-      lineHeight: '0',
-      appearance: 'none',
-      WebkitAppearance: 'none',
-    });
-    close.style.setProperty('-webkit-backdrop-filter', 'blur(16px)');
-    close.addEventListener('click', (event) => {
-      event.stopPropagation();
-      this.close();
-    });
-    return close;
   }
 
   /** Right-hand panel. The experience is already full-screen wide and clipped until a click. */
@@ -984,7 +945,6 @@ export class ScenaroWidget {
       pointerEvents: 'none',
     });
 
-    const close = this.buildCloseButton('absolute');
 
     const catcher = document.createElement('div');
     Object.assign(catcher.style, {
@@ -1003,7 +963,7 @@ export class ScenaroWidget {
       this.expandPanel(catcher);
     });
 
-    panel.append(iframe, catcher, close);
+    panel.append(iframe, catcher);
     document.body.appendChild(panel);
     this.panel = panel;
     this.panelMode = 'docked';
@@ -1062,6 +1022,21 @@ export class ScenaroWidget {
           return;
       }
       
+      if (payload.type === 'SCENARO_SESSION_STATE') {
+          this.experienceActive = payload.active === true;
+          if (this.experienceActive) {
+              this.acquireWakeLock();
+              this.startWakeLockVisibilityReacquire();
+              const conversationId = payload.conversationId?.trim() ?? '';
+              const userId = payload.userId == null ? '' : String(payload.userId).trim();
+              if (conversationId && userId) void this.stampCart(conversationId, userId);
+          } else {
+              this.stopWakeLockVisibilityReacquire();
+              this.releaseWakeLock();
+          }
+          return;
+      }
+
       switch (payload.type) {
           case 'SCENARO_READY':
               console.log('[Scenaro] Iframe is ready');
@@ -1088,12 +1063,39 @@ export class ScenaroWidget {
       }
   }
 
+  private shopExternalId(): string {
+    const customerId = (this.scriptEl?.dataset.shopCustomerId || '').trim();
+    if (!customerId || customerId === '0') return '';
+    const platform = detectStorefront();
+    if (platform !== 'shopify' && platform !== 'magento') return '';
+    return `${platform}:${customerId}`;
+  }
+
   private sendMetadataToIframe() {
-    if (this.iframe && Object.keys(this.metadata).length > 0) {
+    const metadata = { ...this.metadata };
+    const externalId = this.shopExternalId();
+    if (externalId) metadata.externalId = externalId;
+    if (this.iframe && Object.keys(metadata).length > 0) {
       postToIframe(this.iframe, {
         type: 'SCENARO_METADATA',
-        metadata: this.metadata
+        metadata
       });
+    }
+  }
+
+  /** Puts the open conversation on the cart. A later theme add keeps the attributes. */
+  private async stampCart(conversationId: string, userId: string): Promise<void> {
+    if (!this.publicationId) return;
+    const key = `${conversationId}:${userId}:${this.publicationId}`;
+    if (this.stampedConversation === key) return;
+    const engine = this.engine as { markConversation?: (mark: { userId: string; conversationId: string; publicationId: string }) => Promise<void> } | null;
+    if (!engine || typeof engine.markConversation !== 'function') return;
+    this.stampedConversation = key;
+    try {
+      await engine.markConversation({ userId, conversationId, publicationId: this.publicationId });
+    } catch (error) {
+      this.stampedConversation = '';
+      console.warn('[Scenaro] cart mark skipped', error);
     }
   }
 
@@ -1149,7 +1151,9 @@ export class ScenaroWidget {
     const chooser = buildChooser(copy, wide ? 'popup' : 'sheet');
     chooser.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
-      const choice = target?.closest<HTMLElement>('[data-scenaro-choice]')?.dataset.scenaroChoice;
+      const choiceEl = target?.closest<HTMLButtonElement>('[data-scenaro-choice]');
+      if (!choiceEl || choiceEl.disabled) return;
+      const choice = choiceEl.dataset.scenaroChoice;
       if (choice === 'chat') this.chooseChat();
       if (choice === 'immersive') this.chooseImmersive();
     });
@@ -1334,8 +1338,7 @@ export class ScenaroWidget {
       panel.appendChild(waiting);
     }
     const cover = createLoaderFrame('parent');
-    const close = this.buildCloseButton('absolute');
-    panel.append(cover, close);
+    panel.append(cover);
     document.body.appendChild(panel);
     this.panel = panel;
     this.panelMode = 'full';
@@ -1373,7 +1376,7 @@ export class ScenaroWidget {
     await playLoader(cover, motionMs(LOADER_HOLD_MS), 0, true);
     await ready;
     if (this.panel !== panel) return;
-    if (iframe) showExperience(iframe);
+    if (iframe) await prepareExperience(iframe);
     if (waiting) waiting.style.visibility = '';
     await fadeLoader(cover, motionMs(LOADER_FADE_MS));
     if (this.panel !== panel) return;
@@ -1397,9 +1400,7 @@ export class ScenaroWidget {
     const waiting = buildWaiting(this.copy());
     waiting.style.visibility = 'hidden';
     const cover = createLoaderFrame('parent');
-    const close = this.buildCloseButton('absolute');
-    veil.append(waiting, cover, close);
-    this.closeButton = close;
+    veil.append(waiting, cover);
     document.documentElement.appendChild(veil);
     this.fadeVeil = veil;
     this.setLaunchersHidden(true);
@@ -1409,7 +1410,7 @@ export class ScenaroWidget {
   /** Mobile: same loader as the desktop cover, then the iframe. No block sweep. */
   private async mountFade(iframe: HTMLIFrameElement, sessionId: number): Promise<void> {
     this.setLaunchersHidden(true);
-    const cover = createLoaderFrame('viewport', this.nextChat ? undefined : IMMERSIVE_LOADER_STATUS);
+    const cover = createLoaderFrame('viewport', this.chatEmbed ? undefined : IMMERSIVE_LOADER_STATUS);
     cover.style.zIndex = '2147483647';
     this.fadeVeil = cover;
     this.iframe = iframe;
@@ -1424,12 +1425,9 @@ export class ScenaroWidget {
     });
     placeFixedBox(iframe);
     this.holdHostPage();
-    const button = this.buildCloseButton();
-    this.closeButton = button;
     const ready = whenIframeReady(iframe);
     document.documentElement.appendChild(cover);
     document.documentElement.appendChild(iframe);
-    document.documentElement.appendChild(button);
     this.startViewportListeners();
     await this.playMobileLoader(cover, iframe, null, cover, sessionId, ready);
   }
@@ -1446,7 +1444,7 @@ export class ScenaroWidget {
     await playLoader(cover, motionMs(LOADER_HOLD_MS), motionMs(LOADER_FADE_MS), true);
     await ready;
     if (sessionId !== this.sessionId || this.fadeVeil !== veil) return;
-    if (iframe) showExperience(iframe);
+    if (iframe) await prepareExperience(iframe);
     if (waiting) waiting.style.visibility = '';
     await fadeLoader(cover, motionMs(LOADER_FADE_MS));
     if (sessionId !== this.sessionId || this.fadeVeil !== veil) return;

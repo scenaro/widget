@@ -11,7 +11,7 @@ describe('shopifyVariantId', () => {
   });
 
   it('refuses an empty id', () => {
-    expect(() => shopifyVariantId({ productId: '  ' })).toThrow(/variant id/);
+    expect(() => shopifyVariantId({ productId: '  ' })).toThrow(/variant or product id/);
   });
 });
 

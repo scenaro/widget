@@ -23,13 +23,16 @@ export function emptyCart(source: StorefrontCart['source'], raw: unknown = null)
   return { source, items: [], itemCount: 0, subtotal: null, currency: null, raw };
 }
 
-export function shopifyVariantId(params: { productId?: string | number; variantId?: string | number }): string {
+/** Id posted to the storefront. A variant id wins, on Shopify and on Magento. */
+export function cartAddId(params: { productId?: string | number; variantId?: string | number }): string {
   const id = params.variantId ?? params.productId;
   if (id === undefined || id === null || String(id).trim() === '') {
-    throw new Error('Shopify add requires a variant id');
+    throw new Error('Cart add requires a variant or product id');
   }
-  return String(id);
+  return String(id).trim();
 }
+
+export const shopifyVariantId = cartAddId;
 
 function moneyFromCents(value: unknown): number | null {
   if (value === undefined || value === null || value === '') return null;

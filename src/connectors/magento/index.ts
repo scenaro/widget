@@ -1,5 +1,5 @@
 import { Connector } from '../../types';
-import { normalizeMagentoCart, StorefrontCart } from '../cart';
+import { cartAddId, normalizeMagentoCart, StorefrontCart } from '../cart';
 
 // jQuery interface for Magento AMD loading
 interface MagentoJQuery {
@@ -184,6 +184,27 @@ class CartCRUD {
     }
   }
 
+  async mark(mark: { userId: string; conversationId: string; publicationId: string }): Promise<void> {
+    const { $ } = await this.loadMagentoDeps();
+    const formKey = await this.formKey($);
+    if (!formKey) throw new Error('form_key is required');
+    await new Promise<void>((resolve, reject) => {
+      $.ajax({
+        url: '/scenaro/cart/mark',
+        type: 'POST',
+        data: {
+          form_key: formKey,
+          scenaro_user_id: mark.userId,
+          scenaro_conversation_id: mark.conversationId,
+          scenaro_publication_id: mark.publicationId,
+        },
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      }).done(() => resolve()).fail((xhr: { status?: number }) => {
+        reject(new Error(`cart mark failed: ${xhr?.status ?? 0}`));
+      });
+    });
+  }
+
   // CLEAR cart (supprime tout)
   // Note: il n'y a pas toujours un endpoint "clear" natif standard.
   // On le fait en supprimant tous les items un par un.
@@ -231,9 +252,9 @@ export const MagentoConnector: Connector = {
     }
   },
 
-  async addToCart(params: { productId: string | number; qty?: number }): Promise<StorefrontCart> {
+  async addToCart(params: { productId: string | number; variantId?: string | number; qty?: number }): Promise<StorefrontCart> {
     try {
-      return normalizeMagentoCart(await cartCRUD.add(params));
+      return normalizeMagentoCart(await cartCRUD.add({ productId: cartAddId(params), qty: params.qty }));
     } catch (error) {
       console.error('[Scenaro] Error adding to cart:', error);
       throw error;
@@ -266,5 +287,9 @@ export const MagentoConnector: Connector = {
       console.error('[Scenaro] Error clearing cart:', error);
       throw error;
     }
-  }
+  },
+
+  async markConversation(mark): Promise<void> {
+    await cartCRUD.mark(mark);
+  },
 };

@@ -85,6 +85,16 @@ export function ensureChooserStyles(): void {
 .scenaro-glass-choice:hover {
   background: #f4f0eb;
 }
+.scenaro-glass-choice:disabled,
+.scenaro-dock.is-open .scenaro-glass-choice:disabled {
+  opacity: 0.4;
+  color: #8a847c;
+  cursor: default;
+}
+.scenaro-glass-choice:disabled:hover,
+.scenaro-dock.is-open .scenaro-glass-choice:disabled:hover {
+  background: transparent;
+}
 .scenaro-dock .scenaro-glass-choice {
   opacity: 0;
   transform: translateY(6px);
@@ -215,6 +225,31 @@ export function ensureChooserStyles(): void {
 .scenaro-dock.is-open .scenaro-dock-choices-inner {
   padding-bottom: 12px;
 }
+@media (max-width: 1024px) {
+  .scenaro-dock {
+    box-sizing: border-box;
+    transition: width .48s cubic-bezier(.22,1,.36,1),
+      right .48s cubic-bezier(.22,1,.36,1),
+      bottom .48s cubic-bezier(.22,1,.36,1),
+      border-radius .48s cubic-bezier(.22,1,.36,1);
+  }
+  .scenaro-dock.is-open {
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    border-radius: 22px 22px 0 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .scenaro-dock.is-open .scenaro-dock-choices-inner {
+    padding-left: max(4px, env(safe-area-inset-left, 0px));
+    padding-right: max(4px, env(safe-area-inset-right, 0px));
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   [data-scenaro-available] { animation: none !important; }
   .scenaro-dock,
@@ -263,7 +298,7 @@ export function buildChooser(copy: AssistantCopy, variant: 'popup' | 'sheet'): H
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
-    width: variant === 'sheet' ? 'min(640px, 100%)' : '320px',
+    width: variant === 'sheet' ? '100%' : '320px',
     margin: variant === 'sheet' ? '0 auto' : '0',
     padding: variant === 'sheet' ? '28px 20px max(20px, calc(env(safe-area-inset-bottom) + 16px))' : '18px',
     borderRadius: variant === 'sheet' ? '22px 22px 0 0' : '16px',
@@ -378,6 +413,10 @@ function choiceButton(action: 'chat' | 'immersive', label: string): HTMLButtonEl
   button.type = 'button';
   button.className = 'scenaro-glass-choice';
   button.dataset.scenaroChoice = action;
+  if (action === 'chat') {
+    button.disabled = true;
+    button.title = 'Le chat écrit arrive bientôt.';
+  }
   const icon = document.createElement('span');
   icon.className = 'scenaro-choice-icon';
   icon.innerHTML = action === 'chat' ? penIcon() : ringIcon();

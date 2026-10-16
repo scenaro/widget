@@ -33,6 +33,11 @@ export function isWidgetPayload(value: unknown): value is ScenaroEventPayload {
   if (typeof payload.type !== 'string') return false;
   if (['SCENARO_READY', 'SCENARO_END'].includes(payload.type)) return true;
   if (payload.type === 'SCENARO_REDIRECT') return typeof payload.url === 'string';
+  if (payload.type === 'SCENARO_SESSION_STATE') {
+    return typeof payload.active === 'boolean' &&
+      (payload.conversationId === undefined || typeof payload.conversationId === 'string') &&
+      (payload.userId == null || identifier(payload.userId));
+  }
   if (typeof payload.requestId !== 'string' || !payload.requestId.trim()) return false;
   if (payload.type === 'SCENARO_CAPABILITY_REQUEST') {
     return Array.isArray(payload.capabilities) && payload.capabilities.every(c => typeof c === 'string') &&
