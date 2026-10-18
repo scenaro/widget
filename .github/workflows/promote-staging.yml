@@ -1,0 +1,32 @@
+name: Promote main to staging
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: promote-staging-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Pushes from GITHUB_TOKEN usually do not re-trigger other workflows
+          # (e.g. deploy.yml on push to staging). Start with github.token; if
+          # staging deploy does not run, switch checkout/push to a PAT or GitHub
+          # App installation token stored as a repository secret.
+          token: ${{ github.token }}
+          fetch-depth: 0
+
+      - name: Fast-forward staging to main
+        run: |
+          set -euo pipefail
+          git fetch origin main staging
+          git push origin "origin/main:refs/heads/staging"
