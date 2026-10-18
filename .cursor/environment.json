@@ -1,11 +1,5 @@
 {
   "name": "Scenaro Widget",
-  "install": "bash -lc 'if command -v pnpm >/dev/null; then pnpm install; elif [[ -f package-lock.json ]]; then npm ci; else npm install; fi'",
-  "terminals": [
-    {
-      "name": "widget-dev",
-      "command": "bash -lc 'npm run dev 2>/dev/null || pnpm run dev 2>/dev/null || npm start'",
-      "description": "Widget local/dev server"
-    }
-  ]
+  "install": "npm ci",
+  "start": "bash .cursor/start.sh"
 }
