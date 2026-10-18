@@ -4,6 +4,7 @@ import { AppearanceName, appearanceOf, beginPageTakeover, createLoaderFrame, fad
 import { detectStorefront } from './storefront';
 import { isIframeMessage, isWidgetPayload, postToIframe, redirectUrl } from './message-boundary';
 import { locateExperience } from './experience-location';
+import { installWidgetTelemetry } from './telemetry';
 import { CapabilityRequest, CapabilityResponse, CartRequest, ScenaroOpenConfig } from './types';
 
 type LaunchShell = 'appearance' | 'takeover' | 'fade' | 'chat';
@@ -55,6 +56,7 @@ export class ScenaroWidget {
   private onChooserOutside: ((event: MouseEvent) => void) | null = null;
 
   constructor() {
+    installWidgetTelemetry();
     this.publicationId = this.detectConfig();
     this.init();
     this.mountLaunchers();
