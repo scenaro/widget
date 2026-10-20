@@ -149,10 +149,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '18'
+          node-version: '22.22.2'
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Test before building the production release
+        run: npm exec -- vitest run
 
       - name: Build
         run: npm run build
