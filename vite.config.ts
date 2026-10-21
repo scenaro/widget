@@ -1,5 +1,6 @@
 import { resolve } from 'path';
 import { defineConfig } from 'vite';
+import { soraFontDefine } from './scripts/sora-font.mjs';
 // Actually, standard Vite copyPublicDir should work unless lib mode disables it.
 // Let's try a manual copy plugin approach if needed, or just a post-build script.
 // Simplest fix for now: use a shell command in package.json or a simple rollup plugin.
@@ -25,6 +26,12 @@ function copyRuntime() {
 }
 
 export default defineConfig({
+  define: soraFontDefine(),
+  server: {
+    fs: {
+      allow: [resolve(__dirname, '..')],
+    },
+  },
   publicDir: false, // Disable default copy to avoid conflicts if any, or keep it. 
   // Lib mode often ignores publicDir for index.html but should copy assets. 
   // However, let's force it with our plugin to be sure.

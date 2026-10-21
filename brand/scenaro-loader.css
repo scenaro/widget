@@ -1,0 +1,168 @@
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/sora-latin-700.woff2") format("woff2");
+  unicode-range: U+61, U+63, U+65, U+6E, U+6F, U+72, U+73;
+}
+
+@keyframes scenaro-elastic {
+  0%,
+  62%,
+  100% {
+    transform: scale(1);
+  }
+  15% {
+    transform: scale(1.08, 0.88);
+  }
+  28% {
+    transform: scale(0.96, 1.06);
+  }
+  40% {
+    transform: scale(1.02, 0.98);
+  }
+  50% {
+    transform: scale(0.995, 1.01);
+  }
+}
+
+.scenaro-loader {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45em;
+  max-width: 100%;
+  color: inherit;
+  line-height: 1;
+}
+
+.scenaro-loader__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32em;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.scenaro-loader__mark {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+.scenaro-mark--elastic .scenaro-mark__spring {
+  transform-box: view-box;
+  transform-origin: 80px 125px;
+  animation: scenaro-elastic 3s ease-in-out infinite;
+}
+
+.scenaro-loader__word {
+  font-family: "Sora", system-ui, sans-serif;
+  font-weight: 700;
+  font-synthesis: none;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.scenaro-loader__label {
+  font: 500 0.62em/1.3 system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+.scenaro-loader--compact {
+  font-size: 15px;
+}
+.scenaro-loader--compact .scenaro-loader__mark {
+  width: 1.22em;
+  height: 1.07em;
+}
+
+.scenaro-loader--standard {
+  font-size: 22px;
+}
+.scenaro-loader--standard .scenaro-loader__mark {
+  width: 1.28em;
+  height: 1.12em;
+}
+
+.scenaro-loader--large {
+  font-size: 36px;
+}
+.scenaro-loader--large .scenaro-loader__mark {
+  width: 1.34em;
+  height: 1.18em;
+}
+
+.scenaro-loader--light {
+  color: #2e2b35;
+}
+.scenaro-loader--dark {
+  color: #f4f0eb;
+}
+.scenaro-loader--current {
+  color: inherit;
+}
+
+.scenaro-loader--aube {
+  color: #2e2b35;
+}
+.scenaro-loader--aube .scenaro-loader__word {
+  background: linear-gradient(135deg, #f2c94c, #eb6eaf);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.scenaro-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32em;
+  max-width: 100%;
+  color: inherit;
+  font-family: "Sora", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.scenaro-lockup__mark {
+  display: block;
+  flex: none;
+  width: 1.28em;
+  height: 1.12em;
+  overflow: visible;
+}
+
+.scenaro-lockup--compact {
+  font-size: 15px;
+}
+.scenaro-lockup--standard {
+  font-size: 22px;
+}
+.scenaro-lockup--large {
+  font-size: 36px;
+}
+.scenaro-lockup--light {
+  color: #2e2b35;
+}
+.scenaro-lockup--dark {
+  color: #f4f0eb;
+}
+.scenaro-lockup--aube .scenaro-lockup__word {
+  background: linear-gradient(135deg, #f2c94c, #eb6eaf);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scenaro-mark--elastic .scenaro-mark__spring {
+    animation: none;
+  }
+}
+
+.scenaro-loader--reduced .scenaro-mark__spring {
+  animation: none;
+}

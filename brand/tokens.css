@@ -1,0 +1,9 @@
+:root {
+  --scenaro-ink: #2e2b35;
+  --scenaro-night: #0f0e12;
+  --scenaro-cream: #f4f0eb;
+  --scenaro-canvas: #faf9f7;
+  --scenaro-aube: linear-gradient(135deg, #f2c94c, #eb6eaf);
+  --scenaro-font-display: "Sora", system-ui, sans-serif;
+  --scenaro-wordmark-tracking: -0.04em;
+}

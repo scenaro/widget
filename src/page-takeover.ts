@@ -4,6 +4,8 @@
  * restore() puts the page back.
  */
 
+import { coverDocument, type CoverSize } from './cover-loader';
+
 export type AppearanceName = 'takeover' | 'panel';
 
 export function appearanceOf(value: string | null | undefined): AppearanceName {
@@ -710,12 +712,13 @@ export const IMMERSIVE_LOADER_STATUS = 'Expérience en chargement';
 export function createLoaderFrame(
   pin: 'viewport' | 'parent' = 'parent',
   status = LOADER_STATUS,
+  size: CoverSize = pin === 'viewport' ? 'large' : 'standard',
 ): HTMLIFrameElement {
   const frame = document.createElement('iframe');
   frame.dataset.scenaroCover = '1';
   frame.setAttribute('aria-hidden', 'true');
   frame.setAttribute('tabindex', '-1');
-  frame.srcdoc = coverDocument(status);
+  frame.srcdoc = coverDocument(status, size);
   frame.style.cssText = pin === 'viewport'
     ? 'position:fixed;inset:0;width:100vw;height:100vh;border:0;margin:0;padding:0;background:#fff;z-index:2147483646;opacity:0;cursor:default;'
     : 'position:absolute;inset:0;width:100%;height:100%;border:0;margin:0;padding:0;background:#fff;z-index:1;opacity:0;';
@@ -730,19 +733,13 @@ export function playLoader(frame: HTMLIFrameElement, holdMs = LOADER_HOLD_MS, fa
   return fadeOpacity(frame, 0, 1, fadeMs).then(() => sleep(holdMs));
 }
 
-/** The panel iframe does not always run the cover's fade, so the mark and label are shown directly. */
+/** The panel iframe does not always paint on the slide, so the lockup is shown directly. The spring keeps scenaro-elastic. */
 function revealCover(frame: HTMLIFrameElement): void {
   const started = performance.now();
   const show = () => {
-    const nodes = frame.contentDocument?.querySelectorAll('.brand, .status');
-    if (!nodes || nodes.length === 0) return false;
-    nodes.forEach((node) => {
-      if (node.nodeType !== 1 || !('style' in node)) return;
-      const el = node as HTMLElement;
-      el.style.animation = 'none';
-      el.style.opacity = '1';
-      el.style.transform = 'none';
-    });
+    const loader = frame.contentDocument?.querySelector('.scenaro-loader');
+    if (!(loader instanceof HTMLElement)) return false;
+    loader.style.opacity = '1';
     const body = frame.contentDocument?.body;
     if (body) {
       body.classList.remove('run');
@@ -760,70 +757,6 @@ function revealCover(frame: HTMLIFrameElement): void {
 
 export function fadeLoader(frame: HTMLIFrameElement, fadeMs = LOADER_FADE_MS): Promise<void> {
   return fadeOpacity(frame, 1, 0, fadeMs);
-}
-
-function coverDocument(status: string): string {
-  return `<!DOCTYPE html><html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;800&display=swap"><style>
-    html,body{margin:0;height:100%;background:#fff;color:#1a1820;}
-    body{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:32px;font-family:Sora,Inter,system-ui,sans-serif;}
-    .brand{display:flex;align-items:center;justify-content:center;gap:.2em;font-size:32px;font-weight:800;letter-spacing:-.04em;line-height:1;opacity:0;transform:translateY(12px);}
-    .brand svg{width:.92em;height:.92em;display:block;flex:none;transform:translateY(.04em);}
-    .brand span{line-height:1;}
-    .status{display:flex;flex-direction:column;align-items:center;gap:14px;opacity:0;transform:translateY(12px);}
-    .status p{margin:0;font-size:14px;font-weight:500;letter-spacing:-.03em;line-height:1;color:#1a1820;white-space:nowrap;}
-    .track{width:148px;height:2px;border-radius:999px;background:#eceae6;overflow:hidden;}
-    .bar{height:100%;width:0;border-radius:inherit;background:#1a1820;animation:scenaro-load 2s cubic-bezier(.4,0,.2,1) forwards;animation-play-state:paused;}
-    .run .brand{animation:scenaro-in .72s cubic-bezier(.22,1,.36,1) forwards;}
-    .run .status{animation:scenaro-in .72s cubic-bezier(.22,1,.36,1) .2s forwards;}
-    .run .bar{animation-play-state:running;}
-    @keyframes scenaro-in{to{opacity:1;transform:none;}}
-    @keyframes scenaro-load{to{width:100%;}}
-  </style></head><body>
-    <div class="brand">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="32 32 192 192" fill="none" aria-hidden="true">
-        <defs><linearGradient id="ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#1a1820" stop-opacity="0.05"/>
-          <stop offset="1" stop-color="#1a1820" stop-opacity="1"/>
-        </linearGradient></defs>
-        <path fill="url(#ring)" fill-rule="evenodd" d="M128 32a96 96 0 1 1 0 192 96 96 0 0 1 0-192Zm0 32a64 64 0 1 0 0 128 64 64 0 0 0 0-128Z"/>
-      </svg>
-      <span>scenaro</span>
-    </div>
-    <div class="status">
-      <p>${status.replace(/[&<>]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char] ?? char))}</p>
-      <div class="track"><div class="bar"></div></div>
-    </div>
-    <script>
-      (function () {
-        function fit() {
-          var brand = document.querySelector('.brand');
-          var line = document.querySelector('.status p');
-          var track = document.querySelector('.track');
-          if (!brand || !line) return;
-          var target = brand.getBoundingClientRect().width;
-          if (target < 8) return;
-          line.style.letterSpacing = '0px';
-          var size = 14;
-          line.style.fontSize = size + 'px';
-          while (size > 11 && line.getBoundingClientRect().width > target) {
-            size -= 0.5;
-            line.style.fontSize = size + 'px';
-          }
-          var lo = -0.6, hi = 8, mid;
-          for (var i = 0; i < 16; i++) {
-            mid = (lo + hi) / 2;
-            line.style.letterSpacing = mid.toFixed(3) + 'px';
-            if (line.getBoundingClientRect().width < target) lo = mid;
-            else hi = mid;
-          }
-          line.style.letterSpacing = lo.toFixed(3) + 'px';
-          if (track) track.style.width = target + 'px';
-        }
-        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
-        window.addEventListener('load', fit);
-      })();
-    </script>
-  </body></html>`;
 }
 
 function startCoverLoader(frame: HTMLIFrameElement, ms: number): void {

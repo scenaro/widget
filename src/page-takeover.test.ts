@@ -2,7 +2,8 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { appearanceOf, beginPageTakeover, pinHostPage } from './page-takeover';
+import { MARK_PATH } from '../brand/geometry.js';
+import { appearanceOf, beginPageTakeover, createLoaderFrame, LOADER_FADE_MS, LOADER_HOLD_MS, pinHostPage } from './page-takeover';
 
 describe('appearanceOf', () => {
   it('uses the page takeover unless the panel is chosen', () => {
@@ -32,8 +33,13 @@ describe('beginPageTakeover', () => {
     const session = beginPageTakeover({ duration: 0, sweep: 0, coverMs: 0, holdMs: 0, force: true });
     const cover = document.querySelector('[data-scenaro-cover]') as HTMLIFrameElement;
     expect(cover.srcdoc).toContain('>scenaro<');
+    expect(cover.srcdoc).toContain(MARK_PATH);
+    expect(cover.srcdoc).toContain('scenaro-loader--large');
+    expect(cover.srcdoc).toContain('scenaro-mark__spring');
     expect(cover.srcdoc).toContain('Expérience en chargement');
     expect(cover.srcdoc).not.toContain('propuls');
+    expect(cover.srcdoc).not.toContain('M128 32a96');
+    expect(cover.srcdoc).not.toContain('fonts.googleapis.com');
     const experience = document.createElement('iframe');
     experience.id = 'scenaro-iframe';
     document.documentElement.appendChild(experience);
@@ -85,6 +91,23 @@ describe('beginPageTakeover', () => {
     expect(JSON.stringify(lowCall?.frames)).toContain('translate');
     await play;
     await session.restore();
+  });
+});
+
+describe('createLoaderFrame', () => {
+  it('keeps the hold clock and sizes the panel below the full-screen cover', () => {
+    expect(LOADER_HOLD_MS).toBe(2000);
+    expect(LOADER_FADE_MS).toBe(220);
+    expect(LOADER_HOLD_MS).toBeLessThan(3000);
+
+    const panel = createLoaderFrame('parent');
+    const full = createLoaderFrame('viewport', 'Expérience en chargement');
+    expect(panel.srcdoc).toContain('scenaro-loader--standard');
+    expect(panel.srcdoc).toContain('Chargement en cours');
+    expect(full.srcdoc).toContain('scenaro-loader--large');
+    expect(full.srcdoc).toContain(MARK_PATH);
+    expect(full.srcdoc).not.toContain('M128 32a96');
+    expect(full.srcdoc).not.toContain('32 32 192 192');
   });
 });
 

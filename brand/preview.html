@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Scenaro — kit</title>
+  <link rel="icon" href="assets/favicon.svg">
+  <link rel="stylesheet" href="scenaro-loader.css">
+  <style>
+    body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #faf9f7; color: #2e2b35; }
+    main { max-width: 960px; margin: auto; padding: 32px 20px 64px; }
+    section { display: grid; gap: 28px; margin-top: 28px; }
+    .panel { border-radius: 20px; padding: 28px; }
+    .light { background: #faf9f7; }
+    .dark { background: #0f0e12; }
+    h1 { font-family: Sora, system-ui, sans-serif; font-weight: 700; letter-spacing: -0.04em; font-size: 28px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>scenaro</h1>
+    <p>Symbole élastique à gauche, mot fixe à droite. Boucle 3 s. Mouvement réduit : composition fixe.</p>
+    <section>
+      <div class="panel light">
+        <div class="scenaro-loader scenaro-loader--large scenaro-loader--light" role="status" aria-live="polite" aria-busy="true">
+          <span class="scenaro-loader__row">
+            <svg class="scenaro-loader__mark scenaro-mark--elastic" viewBox="-18 -16 196 172" overflow="visible" aria-hidden="true"><g class="scenaro-mark__spring"><path fill="currentColor" fill-rule="evenodd" d="M80 9 A70 61 0 1 1 80 131 A70 61 0 1 1 80 9 Z M90.5 18.5 A51.5 46 0 1 0 90.5 110.5 A51.5 46 0 1 0 90.5 18.5 Z"/></g></svg>
+            <span class="scenaro-loader__word" aria-hidden="true">scenaro</span>
+          </span>
+          <span class="scenaro-loader__label">Chargement</span>
+        </div>
+      </div>
+      <div class="panel dark">
+        <div class="scenaro-loader scenaro-loader--standard scenaro-loader--dark" role="status" aria-busy="true">
+          <span class="scenaro-loader__row">
+            <svg class="scenaro-loader__mark scenaro-mark--elastic" viewBox="-18 -16 196 172" overflow="visible" aria-hidden="true"><g class="scenaro-mark__spring"><path fill="currentColor" fill-rule="evenodd" d="M80 9 A70 61 0 1 1 80 131 A70 61 0 1 1 80 9 Z M90.5 18.5 A51.5 46 0 1 0 90.5 110.5 A51.5 46 0 1 0 90.5 18.5 Z"/></g></svg>
+            <span class="scenaro-loader__word">scenaro</span>
+          </span>
+        </div>
+      </div>
+      <div class="panel light">
+        <div class="scenaro-loader scenaro-loader--compact scenaro-loader--aube" role="status" aria-busy="true">
+          <span class="scenaro-loader__row">
+            <svg class="scenaro-loader__mark scenaro-mark--elastic" viewBox="-18 -16 196 172" overflow="visible" aria-hidden="true"><defs><linearGradient id="preview-aube" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f2c94c"/><stop offset="1" stop-color="#eb6eaf"/></linearGradient></defs><g class="scenaro-mark__spring"><path fill="url(#preview-aube)" fill-rule="evenodd" d="M80 9 A70 61 0 1 1 80 131 A70 61 0 1 1 80 9 Z M90.5 18.5 A51.5 46 0 1 0 90.5 110.5 A51.5 46 0 1 0 90.5 18.5 Z"/></g></svg>
+            <span class="scenaro-loader__word">scenaro</span>
+          </span>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

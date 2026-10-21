@@ -1,0 +1,26 @@
+{
+  "name": "@scenaro/brand",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scenaro identity kit: asymmetric mark, Sora 700 wordmark, elastic loader.",
+  "exports": {
+    "./geometry": "./geometry.js",
+    "./tokens.css": "./tokens.css",
+    "./loader.css": "./scenaro-loader.css",
+    "./html": "./html/loader.js",
+    "./react": "./react/index.tsx",
+    "./assets/*": "./assets/*"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "test": "node --test test/kit.test.mjs"
+  }
+}

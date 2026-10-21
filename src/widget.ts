@@ -1,6 +1,7 @@
 import { presentExperience, prepareExperience, whenIframeReady } from './experience-transition';
 import { assistantCopy, buildChooser, buildDockChoices, buildWaiting, ensureChooserStyles, isWideChooser, motionMs } from './chooser';
-import { AppearanceName, appearanceOf, beginPageTakeover, createLoaderFrame, fadeLoader, IMMERSIVE_LOADER_STATUS, LOADER_FADE_MS, LOADER_HOLD_MS, PageTakeoverSession, pinHostPage, placeFixedBox, playLoader, visibleViewportBox } from './page-takeover';
+import { launcherMarkSvg } from './cover-loader';
+import { AppearanceName, appearanceOf, beginPageTakeover, createLoaderFrame, fadeLoader, IMMERSIVE_LOADER_STATUS, LOADER_FADE_MS, LOADER_HOLD_MS, LOADER_STATUS, PageTakeoverSession, pinHostPage, placeFixedBox, playLoader, visibleViewportBox } from './page-takeover';
 import { detectStorefront } from './storefront';
 import { isIframeMessage, isWidgetPayload, postToIframe, redirectUrl } from './message-boundary';
 import { locateExperience } from './experience-location';
@@ -740,7 +741,7 @@ export class ScenaroWidget {
     return button;
   }
 
-  /** White pill, same ink and ring as the page-takeover loader. */
+  /** White pill. Static mark; the elastic loop stays in the cover iframe. */
   private dressFloatingButton(button: HTMLButtonElement, label: string) {
     ensureChooserStyles();
     button.classList.add('scenaro-glass-launcher');
@@ -748,13 +749,13 @@ export class ScenaroWidget {
     const ink = this.buttonTone() === 'black' ? '#ffffff' : '#1a1820';
     const mark = document.createElement('span');
     mark.className = 'scenaro-launcher-mark';
-    mark.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="32 32 192 192" width="15" height="15" fill="none" aria-hidden="true"><defs><linearGradient id="scenaro-launcher-ring" x1="224" y1="128" x2="32" y2="128" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${ink}" stop-opacity="0.05"/><stop offset="1" stop-color="${ink}" stop-opacity="1"/></linearGradient></defs><path fill="url(#scenaro-launcher-ring)" fill-rule="evenodd" d="M128 32a96 96 0 1 1 0 192 96 96 0 0 1 0-192Zm0 32a64 64 0 1 0 0 128 64 64 0 0 0 0-128Z"/></svg>`;
+    mark.innerHTML = launcherMarkSvg(ink);
     Object.assign(mark.style, {
       display: 'inline-flex',
       alignItems: 'center',
       justifyContent: 'center',
-      width: '15px',
-      height: '15px',
+      width: '18.3px',
+      height: '16px',
       flex: '0 0 auto',
     });
     const text = document.createElement('span');
@@ -1401,7 +1402,7 @@ export class ScenaroWidget {
     });
     const waiting = buildWaiting(this.copy());
     waiting.style.visibility = 'hidden';
-    const cover = createLoaderFrame('parent');
+    const cover = createLoaderFrame('parent', LOADER_STATUS, 'large');
     veil.append(waiting, cover);
     document.documentElement.appendChild(veil);
     this.fadeVeil = veil;
