@@ -734,6 +734,15 @@ export function playLoader(frame: HTMLIFrameElement, holdMs = LOADER_HOLD_MS, fa
   return fadeOpacity(frame, 0, 1, fadeMs).then(() => sleep(holdMs));
 }
 
+/** Start the mark next to the word when the cover is shown, not while the iframe was hidden. */
+function restartSpring(root: ParentNode): void {
+  const spring = root.querySelector('.scenaro-mark__spring');
+  if (!(spring instanceof HTMLElement)) return;
+  spring.style.animation = 'none';
+  void spring.offsetWidth;
+  spring.style.animation = '';
+}
+
 /** The panel iframe does not always paint on the slide, so the lockup is shown directly. The spring keeps scenaro-elastic. */
 function revealCover(frame: HTMLIFrameElement): void {
   const started = performance.now();
@@ -746,6 +755,7 @@ function revealCover(frame: HTMLIFrameElement): void {
       body.classList.remove('run');
       void body.offsetWidth;
       body.classList.add('run');
+      restartSpring(body);
     }
     return true;
   };
@@ -769,6 +779,7 @@ function startCoverLoader(frame: HTMLIFrameElement, ms: number): void {
       (bar as HTMLElement).style.animationDuration = `${ms}ms`;
     }
     body.classList.add('run');
+    restartSpring(body);
   };
   if (frame.contentDocument?.body) arm();
   else frame.addEventListener('load', arm, { once: true });

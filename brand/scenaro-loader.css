@@ -9,20 +9,20 @@
 
 @keyframes scenaro-elastic {
   0%,
-  62%,
+  38%,
   100% {
     transform: scale(1);
   }
-  15% {
+  4% {
     transform: scale(1.08, 0.88);
   }
-  28% {
+  12% {
     transform: scale(0.96, 1.06);
   }
-  40% {
+  20% {
     transform: scale(1.02, 0.98);
   }
-  50% {
+  28% {
     transform: scale(0.995, 1.01);
   }
 }
