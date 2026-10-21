@@ -36,7 +36,8 @@ describe('beginPageTakeover', () => {
     expect(cover.srcdoc).toContain(MARK_PATH);
     expect(cover.srcdoc).toContain('scenaro-loader--large');
     expect(cover.srcdoc).toContain('scenaro-mark__spring');
-    expect(cover.srcdoc).toContain('Expérience en chargement');
+    expect(cover.srcdoc).toContain('class="bar"');
+    expect(cover.srcdoc).not.toContain('Expérience en chargement');
     expect(cover.srcdoc).not.toContain('propuls');
     expect(cover.srcdoc).not.toContain('M128 32a96');
     expect(cover.srcdoc).not.toContain('fonts.googleapis.com');

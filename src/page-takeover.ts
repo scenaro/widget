@@ -706,7 +706,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 export const LOADER_STATUS = 'Chargement en cours';
-export const IMMERSIVE_LOADER_STATUS = 'Expérience en chargement';
+/** Full-screen cover: the hold bar is the progress. No status sentence. */
+export const IMMERSIVE_LOADER_STATUS = '';
 
 /** White cover that fills its parent. The immersive sweep pins it to the viewport. */
 export function createLoaderFrame(

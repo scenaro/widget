@@ -1,8 +1,8 @@
 {
   "cohort": 0,
-  "stable": "2026-10-21-rebrand",
-  "beta": "2026-10-21-rebrand",
-  "release": "2026-10-21-rebrand",
+  "stable": "2026-10-21-rebrand-bar",
+  "beta": "2026-10-21-rebrand-bar",
+  "release": "2026-10-21-rebrand-bar",
   "keep": [
     "2026-10-07-17",
     "2026-10-08-18",
