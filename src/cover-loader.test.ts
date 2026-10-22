@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { LOADER_VIEWBOX, MARK_PATH, VIEWBOX } from '../brand/geometry.js';
+import { LOADER_VIEWBOX, MARK_PATH, VIEWBOX, WORDMARK_STEM } from '../brand/geometry.js';
 import { coverDocument, launcherMarkSvg } from './cover-loader';
 import { ScenaroWidget } from './widget';
 
@@ -28,7 +28,7 @@ describe('coverDocument', () => {
     expect(doc.querySelector('.scenaro-loader__mark')?.getAttribute('viewBox')).toBe(LOADER_VIEWBOX);
     expect(spring?.querySelector('path')?.getAttribute('d')).toBe(MARK_PATH);
     expect(spring?.querySelector('.scenaro-loader__word')).toBeNull();
-    expect(word?.textContent).toBe('scenaro');
+    expect(word?.textContent).toBe(WORDMARK_STEM);
     expect(word?.closest('.scenaro-mark__spring')).toBeNull();
     expect(row?.contains(spring ?? null)).toBe(true);
     expect(row?.contains(word)).toBe(true);
@@ -55,7 +55,7 @@ describe('coverDocument', () => {
   it('uses the panel size without letting the status replace the word', () => {
     const { html, doc } = cover('A & B <ok>', 'standard');
     expect(doc.querySelector('.scenaro-loader')?.className).toContain('scenaro-loader--standard');
-    expect(doc.querySelector('.scenaro-loader__word')?.textContent).toBe('scenaro');
+    expect(doc.querySelector('.scenaro-loader__word')?.textContent).toBe(WORDMARK_STEM);
     expect(doc.querySelector('.scenaro-loader__label')?.textContent).toBe('A & B <ok>');
     expect(html).toContain('A &amp; B &lt;ok&gt;');
   });
