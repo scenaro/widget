@@ -63,7 +63,7 @@ export function ScenaroMark({
   )
 }
 
-/** Symbol plus the fixed word “scenaro”. */
+/** “scenar” in Sora 700, with the ring as the final o. */
 export function ScenaroLockup({
   theme = "current",
   size = "standard",
@@ -74,15 +74,22 @@ export function ScenaroLockup({
   className?: string
 }) {
   return (
-    <span className={cx("scenaro-lockup", `scenaro-lockup--${size}`, `scenaro-lockup--${theme}`, className)} style={themeStyle(theme)}>
+    <span
+      className={cx("scenaro-lockup", `scenaro-lockup--${size}`, `scenaro-lockup--${theme}`, className)}
+      style={themeStyle(theme)}
+      role="img"
+      aria-label="scenaro"
+    >
+      <span className="scenaro-lockup__word" aria-hidden="true">
+        scenar
+      </span>
       <ScenaroMark theme={theme} className="scenaro-lockup__mark" />
-      <span className="scenaro-lockup__word">scenaro</span>
     </span>
   )
 }
 
 /**
- * Elastic symbol on the left, fixed “scenaro” on the right.
+ * Wordmark with the ring as an elastic o. The letters stay still.
  * Pass a translated label. Remove the component when loading finishes.
  */
 export function ScenaroLoader({
@@ -107,12 +114,12 @@ export function ScenaroLoader({
       aria-busy={busy}
     >
       <span className="scenaro-loader__row">
-        <ScenaroMark theme={theme} elastic className="scenaro-loader__mark" />
-        <span className="scenaro-loader__word" aria-hidden={label ? true : undefined}>
-          scenaro
+        <span className="scenaro-loader__word" aria-hidden="true">
+          scenar
         </span>
+        <ScenaroMark theme={theme} elastic className="scenaro-loader__mark" />
       </span>
-      {label ? <span className="scenaro-loader__label">{label}</span> : null}
+      {label ? <span className="scenaro-loader__label">{label}</span> : <span className="scenaro-visually-hidden">scenaro</span>}
     </div>
   )
 }

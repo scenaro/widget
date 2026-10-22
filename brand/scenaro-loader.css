@@ -28,6 +28,7 @@
 }
 
 .scenaro-loader {
+  position: relative;
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
@@ -39,30 +40,38 @@
 
 .scenaro-loader__row {
   display: inline-flex;
-  align-items: center;
-  gap: 0.32em;
+  align-items: baseline;
   max-width: 100%;
   white-space: nowrap;
 }
 
-.scenaro-loader__mark {
+.scenaro-loader__mark,
+.scenaro-lockup__mark {
   display: block;
   flex: none;
   overflow: visible;
+}
+
+/* Tight viewBox 0 0 160 140. Outer ring matches the Sora o. */
+.scenaro-lockup__mark {
+  width: 0.7685em;
+  height: 0.6725em;
+  margin-left: -0.049em;
+  transform: translateY(0.062em);
+}
+
+/* Padded loader viewBox, same user-unit scale so the o stays the same size. */
+.scenaro-loader__mark {
+  width: 0.9414em;
+  height: 0.8262em;
+  margin-left: -0.1355em;
+  transform: translateY(0.1389em);
 }
 
 .scenaro-mark--elastic .scenaro-mark__spring {
   transform-box: view-box;
   transform-origin: 80px 125px;
   animation: scenaro-elastic 3s ease-in-out infinite;
-}
-
-.scenaro-loader__word {
-  font-family: "Sora", system-ui, sans-serif;
-  font-weight: 700;
-  font-synthesis: none;
-  letter-spacing: -0.04em;
-  line-height: 1;
 }
 
 .scenaro-loader__label {
@@ -73,25 +82,13 @@
 .scenaro-loader--compact {
   font-size: 15px;
 }
-.scenaro-loader--compact .scenaro-loader__mark {
-  width: 1.22em;
-  height: 1.07em;
-}
 
 .scenaro-loader--standard {
   font-size: 22px;
 }
-.scenaro-loader--standard .scenaro-loader__mark {
-  width: 1.28em;
-  height: 1.12em;
-}
 
 .scenaro-loader--large {
   font-size: 36px;
-}
-.scenaro-loader--large .scenaro-loader__mark {
-  width: 1.34em;
-  height: 1.18em;
 }
 
 .scenaro-loader--light {
@@ -116,8 +113,7 @@
 
 .scenaro-lockup {
   display: inline-flex;
-  align-items: center;
-  gap: 0.32em;
+  align-items: baseline;
   max-width: 100%;
   color: inherit;
   font-family: "Sora", system-ui, sans-serif;
@@ -127,12 +123,25 @@
   white-space: nowrap;
 }
 
-.scenaro-lockup__mark {
-  display: block;
-  flex: none;
-  width: 1.28em;
-  height: 1.12em;
-  overflow: visible;
+.scenaro-lockup__word,
+.scenaro-loader__word {
+  font-family: "Sora", system-ui, sans-serif;
+  font-weight: 700;
+  font-synthesis: none;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.scenaro-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .scenaro-lockup--compact {

@@ -10,6 +10,20 @@ export const LOADER_VIEWBOX = "-18 -16 196 172"
 
 export const WORDMARK = "scenaro"
 
+/** Letters drawn in Sora. The final o is the ring, not a glyph. */
+export const WORDMARK_STEM = "scenar"
+
+/**
+ * Ring as the o of Sora 700 at letter-spacing -0.04em.
+ * Outer ring height matches the o glyph (586/1000 em). Side bearings match that glyph.
+ */
+export const O_MARK = {
+  widthEm: 0.7685,
+  heightEm: 0.6725,
+  marginLeftEm: -0.049,
+  translateYEm: 0.062,
+}
+
 export const COLORS = {
   ink: "#2e2b35",
   night: "#0f0e12",
@@ -30,7 +44,7 @@ export const ELASTIC = {
 }
 
 export const SIZES = {
-  compact: { wordPx: 15, markWidthEm: 1.22, markHeightEm: 1.07 },
-  standard: { wordPx: 22, markWidthEm: 1.28, markHeightEm: 1.12 },
-  large: { wordPx: 36, markWidthEm: 1.34, markHeightEm: 1.18 },
+  compact: { wordPx: 15, markWidthEm: O_MARK.widthEm, markHeightEm: O_MARK.heightEm },
+  standard: { wordPx: 22, markWidthEm: O_MARK.widthEm, markHeightEm: O_MARK.heightEm },
+  large: { wordPx: 36, markWidthEm: O_MARK.widthEm, markHeightEm: O_MARK.heightEm },
 }

@@ -25,7 +25,7 @@ function aubeDefs(id) {
 }
 
 /**
- * Horizontal loader: elastic symbol, fixed “scenaro”, optional status line.
+ * Wordmark loader: fixed “scenar”, elastic ring as the o, optional status line.
  * Host must include brand/scenaro-loader.css and the local Sora file.
  * Unmount this markup when the wait ends; do not hold for the 3s loop.
  *
@@ -39,10 +39,11 @@ export function scenaroLoaderMarkup(options = {}) {
   const gradientId = escapeHtml(options.id || "scenaro-aube")
   const fill = theme === "aube" ? `url(#${gradientId})` : "currentColor"
   const defs = theme === "aube" ? aubeDefs(gradientId) : ""
-  const wordHidden = label ? ` aria-hidden="true"` : ""
-  const labelHtml = label ? `<span class="scenaro-loader__label">${label}</span>` : ""
+  const labelHtml = label
+    ? `<span class="scenaro-loader__label">${label}</span>`
+    : `<span class="scenaro-visually-hidden">scenaro</span>`
 
-  return `<div class="scenaro-loader scenaro-loader--${size} scenaro-loader--${theme}" role="status" aria-live="polite" aria-busy="${busy ? "true" : "false"}"><span class="scenaro-loader__row"><svg class="scenaro-loader__mark scenaro-mark--elastic" xmlns="http://www.w3.org/2000/svg" viewBox="${LOADER_VIEWBOX}" overflow="visible" aria-hidden="true">${defs}<g class="scenaro-mark__spring"><path fill="${fill}" fill-rule="evenodd" d="${MARK_PATH}"/></g></svg><span class="scenaro-loader__word"${wordHidden}>scenaro</span></span>${labelHtml}</div>`
+  return `<div class="scenaro-loader scenaro-loader--${size} scenaro-loader--${theme}" role="status" aria-live="polite" aria-busy="${busy ? "true" : "false"}"><span class="scenaro-loader__row"><span class="scenaro-loader__word" aria-hidden="true">scenar</span><svg class="scenaro-loader__mark scenaro-mark--elastic" xmlns="http://www.w3.org/2000/svg" viewBox="${LOADER_VIEWBOX}" overflow="visible" aria-hidden="true">${defs}<g class="scenaro-mark__spring"><path fill="${fill}" fill-rule="evenodd" d="${MARK_PATH}"/></g></svg></span>${labelHtml}</div>`
 }
 
 /**
@@ -55,7 +56,7 @@ export function scenaroLockupMarkup(options = {}) {
   const fill = theme === "aube" ? `url(#${gradientId})` : "currentColor"
   const defs = theme === "aube" ? aubeDefs(gradientId) : ""
 
-  return `<span class="scenaro-lockup scenaro-lockup--${size} scenaro-lockup--${theme}"><svg class="scenaro-lockup__mark" xmlns="http://www.w3.org/2000/svg" viewBox="${VIEWBOX}" aria-hidden="true">${defs}<path fill="${fill}" fill-rule="evenodd" d="${MARK_PATH}"/></svg><span class="scenaro-lockup__word">scenaro</span></span>`
+  return `<span class="scenaro-lockup scenaro-lockup--${size} scenaro-lockup--${theme}" role="img" aria-label="scenaro"><span class="scenaro-lockup__word" aria-hidden="true">scenar</span><svg class="scenaro-lockup__mark" xmlns="http://www.w3.org/2000/svg" viewBox="${VIEWBOX}" aria-hidden="true">${defs}<path fill="${fill}" fill-rule="evenodd" d="${MARK_PATH}"/></svg></span>`
 }
 
 export { AUBE_GRADIENT, COLORS, LOADER_VIEWBOX, MARK_PATH, VIEWBOX }

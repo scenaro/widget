@@ -70,7 +70,7 @@ body {
 `;
 
 /**
- * Elastic symbol, fixed word, status underneath, then the existing hold bar.
+ * Wordmark with the ring as an elastic o, status underneath, then the existing hold bar.
  * The 3s loop is not a gate: the host removes this document when the wait ends.
  */
 export function coverDocument(status: string, size: CoverSize): string {
