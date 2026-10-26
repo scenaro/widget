@@ -734,28 +734,30 @@ export function playLoader(frame: HTMLIFrameElement, holdMs = LOADER_HOLD_MS, fa
   return fadeOpacity(frame, 0, 1, fadeMs).then(() => sleep(holdMs));
 }
 
-/** Start the mark next to the word when the cover is shown, not while the iframe was hidden. */
-function restartSpring(root: ParentNode): void {
-  const spring = root.querySelector('.scenaro-mark__spring');
-  if (!(spring instanceof HTMLElement)) return;
-  spring.style.animation = 'none';
-  void spring.offsetWidth;
-  spring.style.animation = '';
+/** Restart the one-shot arrival on presentation, including same-origin iframe realms. */
+function restartArrival(root: ParentNode): void {
+  const nodes = root.querySelectorAll<HTMLElement>(
+    '.scenaro-arrival-mover, .scenaro-arrival-word > span, .scenaro-arrival-shadow',
+  );
+  nodes.forEach(node => { node.style.animation = 'none'; });
+  const first = nodes[0];
+  if (first) void first.offsetWidth;
+  nodes.forEach(node => { node.style.animation = ''; });
 }
 
-/** The panel iframe does not always paint on the slide, so the lockup is shown directly. The spring keeps scenaro-elastic. */
+/** Present the arrival after the panel slide, rather than spending it under the cover. */
 function revealCover(frame: HTMLIFrameElement): void {
   const started = performance.now();
   const show = () => {
     const loader = frame.contentDocument?.querySelector('.scenaro-loader');
-    if (!(loader instanceof HTMLElement)) return false;
-    loader.style.opacity = '1';
+    if (!loader || loader.nodeType !== 1 || !('style' in loader)) return false;
+    (loader as HTMLElement).style.opacity = '1';
     const body = frame.contentDocument?.body;
     if (body) {
       body.classList.remove('run');
       void body.offsetWidth;
       body.classList.add('run');
-      restartSpring(body);
+      restartArrival(body);
     }
     return true;
   };
@@ -779,7 +781,7 @@ function startCoverLoader(frame: HTMLIFrameElement, ms: number): void {
       (bar as HTMLElement).style.animationDuration = `${ms}ms`;
     }
     body.classList.add('run');
-    restartSpring(body);
+    restartArrival(body);
   };
   if (frame.contentDocument?.body) arm();
   else frame.addEventListener('load', arm, { once: true });

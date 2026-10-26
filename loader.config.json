@@ -1,9 +1,10 @@
 {
   "cohort": 0,
-  "stable": "2026-10-21-rebrand-spring",
-  "beta": "2026-10-21-rebrand-spring",
-  "release": "2026-10-21-rebrand-spring",
+  "stable": "2026-10-26-brand-arrival",
+  "beta": "2026-10-26-brand-arrival",
+  "release": "2026-10-26-brand-arrival",
   "keep": [
+    "2026-10-21-rebrand-spring",
     "2026-10-07-17",
     "2026-10-08-18",
     "2026-10-11-11",

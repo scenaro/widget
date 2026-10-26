@@ -98,3 +98,14 @@ For a seamless entrance, send `SCENARO_VIEW_READY` after mounting. The widget ma
 the iframe fully opaque beneath the loader, waits for a paint, then sends
 `SCENARO_PRESENT` and fades only the loader. Do not start an additional iframe
 opacity transition during this handoff.
+
+### Brand arrival
+
+The opening cover uses Commerce’s one-shot “au passage” animation: six letters
+appear as the canonical ring crosses and settles into the final o. The exact
+trajectory is vendored in `brand/scenaro-arrival.css`; the cover inlines it and
+Sora so no font request delays the opening. Standard covers use 28 px, full-screen
+covers 40 px (36 px on small screens). The existing 2 s hold and ready/paint handoff
+are preserved; the 4.2 s animation is never an extra gate. Reduced motion leaves
+the completed wordmark static. The later discussion connection belongs to the
+experience and displays its localized connection status instead of replaying the brand.

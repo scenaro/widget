@@ -16,33 +16,36 @@ function cover(status: string, size: 'standard' | 'large' = 'large') {
 }
 
 describe('coverDocument', () => {
-  it('puts the elastic symbol left of the fixed word and the status below', () => {
+  it('plays the Commerce passage once with the ring as the final o and an offline font', () => {
     const { html, doc } = cover('Expérience en chargement', 'large');
-    const spring = doc.querySelector('.scenaro-mark__spring');
+    const mover = doc.querySelector('.scenaro-arrival-mover');
     const word = doc.querySelector('.scenaro-loader__word');
     const row = doc.querySelector('.scenaro-loader__row');
     const css = doc.querySelector('style')?.textContent ?? '';
 
     expect(doc.querySelector('.scenaro-loader')?.className).toContain('scenaro-loader--large');
     expect(doc.querySelector('.scenaro-loader')?.className).toContain('scenaro-loader--light');
-    expect(doc.querySelector('.scenaro-loader__mark')?.getAttribute('viewBox')).toBe(LOADER_VIEWBOX);
-    expect(spring?.querySelector('path')?.getAttribute('d')).toBe(MARK_PATH);
-    expect(spring?.querySelector('.scenaro-loader__word')).toBeNull();
+    expect(mover?.querySelector('svg')?.getAttribute('viewBox')).toBe(VIEWBOX);
+    expect(mover?.querySelector('path')?.getAttribute('d')).toBe(MARK_PATH);
+    expect(doc.querySelector('.scenaro-arrival')?.getAttribute('data-arrival')).toBe('passage');
+    expect(doc.querySelectorAll('.scenaro-arrival-word > span')).toHaveLength(6);
     expect(word?.textContent).toBe(WORDMARK_STEM);
-    expect(word?.closest('.scenaro-mark__spring')).toBeNull();
-    expect(row?.contains(spring ?? null)).toBe(true);
+    expect(word?.closest('.scenaro-arrival-mover')).toBeNull();
+    expect(row?.contains(mover ?? null)).toBe(true);
     expect(row?.contains(word)).toBe(true);
     expect(doc.querySelector('.scenaro-loader__label')?.textContent).toBe('Expérience en chargement');
     expect(doc.querySelector('.bar')).not.toBeNull();
     expect(css).toContain('@keyframes scenaro-elastic');
-    expect(css).toContain('animation: scenaro-elastic 3s ease-in-out infinite');
+    expect(css).toContain('animation: scenaro-arrival-balle 4.2s linear 1 both');
+    expect(css).toContain('scenaro-arrival-pass-s');
+    expect(css).toContain('body:not(.run) .scenaro-arrival-mover');
     expect(css).toContain('transform-origin: 80px 125px');
     expect(css).toContain('transform-box: view-box');
     expect(css).toContain('letter-spacing: -0.04em');
     expect(css).toContain('font-weight: 700');
     expect(css).toContain('prefers-reduced-motion: reduce');
     expect(css).toContain('animation: none');
-    expect(css).not.toMatch(/\.scenaro-loader__word\s*\{[^}]*animation/);
+    expect(doc.querySelector('.scenaro-mark__spring')).toBeNull();
     const font = html.match(/data:font\/woff2;base64,([A-Za-z0-9+/=]+)/);
     expect(font?.[1].startsWith(SORA_WOFF2_PREFIX)).toBe(true);
     expect(font?.[1].length).toBe(SORA_WOFF2_BASE64_LENGTH);

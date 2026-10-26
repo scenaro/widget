@@ -8,7 +8,7 @@ export function soraFontDefine() {
   const fontPath = join(root, 'brand/fonts/sora-latin-700.woff2');
   const cssPath = join(root, 'brand/scenaro-loader.css');
   const base64 = readFileSync(fontPath).toString('base64');
-  const css = readFileSync(cssPath, 'utf8');
+  const css = readFileSync(cssPath, 'utf8') + '\n' + readFileSync(join(root, 'brand/scenaro-arrival.css'), 'utf8');
   if (base64.length < 1000) throw new Error(`Sora font missing at ${fontPath}`);
   if (!css.includes('@keyframes scenaro-elastic')) throw new Error(`Loader CSS missing at ${cssPath}`);
   return {

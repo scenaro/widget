@@ -1,5 +1,5 @@
 import { MARK_PATH, VIEWBOX } from '../brand/geometry.js';
-import { scenaroLoaderMarkup } from '../brand/html/loader.js';
+import { scenaroArrivalMarkup } from '../brand/html/arrival.js';
 
 export type CoverSize = 'compact' | 'standard' | 'large';
 
@@ -18,7 +18,7 @@ function soraDataUri(): string {
 function inlinedLoaderCss(): string {
   const uri = soraDataUri();
   const kit = __SCENARO_LOADER_CSS__;
-  if (typeof kit !== 'string' || !kit.includes('@keyframes scenaro-elastic')) {
+  if (typeof kit !== 'string' || !kit.includes('@keyframes scenaro-arrival-balle')) {
     throw new Error('Scenaro loader CSS was not inlined');
   }
   const css = kit.replace('url("./fonts/sora-latin-700.woff2")', `url("${uri}")`);
@@ -48,6 +48,16 @@ body {
   max-width: 100%;
   color: #2e2b35;
 }
+.scenaro-cover .scenaro-loader--standard { font-size: 28px; }
+.scenaro-cover .scenaro-loader--large { font-size: 40px; }
+.scenaro-cover .scenaro-loader__label { font-size: 13px; text-align: center; }
+.scenaro-cover .scenaro-arrival-stage { padding: 1.4em 1.2em .25em; }
+body:not(.run) .scenaro-arrival-mover,
+body:not(.run) .scenaro-arrival-word > span,
+body:not(.run) .scenaro-arrival-shadow { animation-play-state: paused; }
+@media (max-width: 480px) {
+  .scenaro-cover .scenaro-loader--large { font-size: 36px; }
+}
 .scenaro-cover .track {
   height: 2px;
   border-radius: 999px;
@@ -70,15 +80,13 @@ body {
 `;
 
 /**
- * Wordmark with the ring as an elastic o, status underneath, then the existing hold bar.
- * The 3s loop is not a gate: the host removes this document when the wait ends.
+ * Same one-shot “au passage” arrival as Commerce, then the existing hold bar.
+ * The host removes this document when ready; animation length is not a gate.
  */
 export function coverDocument(status: string, size: CoverSize): string {
-  const markup = scenaroLoaderMarkup({
+  const markup = scenaroArrivalMarkup({
     size,
-    theme: 'light',
     label: status,
-    id: 'scenaro-cover',
   });
   return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
     + LOADER_CSS
@@ -88,7 +96,7 @@ export function coverDocument(status: string, size: CoverSize): string {
     + '<div class="track" aria-hidden="true"><div class="bar"></div></div></div></body></html>';
 }
 
-/** Static mark for the host launcher. The elastic loop stays inside the cover iframe. */
+/** Static mark for the host launcher. The arrival stays inside the cover iframe. */
 export function launcherMarkSvg(fill: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${VIEWBOX}" width="18.3" height="16" aria-hidden="true"><path fill="${fill}" fill-rule="evenodd" d="${MARK_PATH}"/></svg>`;
 }
