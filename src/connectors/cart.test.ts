@@ -49,6 +49,24 @@ describe('normalizeShopifyCart', () => {
   });
 });
 
+describe('Shopify cart round trip with the commerce iframe', () => {
+  it('reconciles a SKU-less catalogue row and returns the exact line key for removal', () => {
+    const cart = normalizeShopifyCart({items: [{
+      key: '54607515287841:line-properties', product_id: 10775766499617,
+      variant_id: 54607515287841, handle: 'the-collection-snowboard-hydrogen',
+      sku: '', quantity: 1, price: 60000,
+    }]});
+    const agentId = 'the-collection-snowboard-hydrogen';
+    // The deployed iframe reads these fields when restoring its bucket and removing a line.
+    const bucket = cart.items.map(item => ({ id: item.product_sku || item.sku || item.product_id, qty: item.qty }));
+    expect(bucket).toEqual([{id: agentId, qty: 1}]);
+    const line = cart.items.find(item => item.product_sku === agentId);
+    expect(line?.item_id ?? line?.product_id).toBe('54607515287841:line-properties');
+    expect(line?.product_id).toBe('10775766499617');
+    expect(line?.price).toBe(600);
+  });
+});
+
 describe('normalizeMagentoCart', () => {
   it('keeps the minicart item id used for updates', () => {
     const cart = normalizeMagentoCart({

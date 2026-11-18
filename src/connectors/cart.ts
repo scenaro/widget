@@ -8,6 +8,10 @@ export interface StorefrontCartLine {
   qty: number;
   sku: string;
   price: number | null;
+  /** Existing commerce iframe field names; Shopify line key must survive round trips. */
+  item_id?: string;
+  product_id?: string;
+  product_sku?: string;
 }
 
 export interface StorefrontCart {
@@ -55,7 +59,11 @@ export function normalizeShopifyCart(cart: any): StorefrontCart {
     variantId: String(item?.variant_id ?? item?.id ?? ''),
     title: String(item?.product_title || item?.title || ''),
     qty: Number(item?.quantity ?? 0),
-    sku: String(item?.sku ?? ''),
+    // Catalogue rows also use the handle when the variant has no SKU.
+    sku: String(item?.sku || item?.handle || ''),
+    item_id: String(item?.key ?? item?.id ?? ''),
+    product_id: String(item?.product_id ?? ''),
+    product_sku: String(item?.sku || item?.handle || ''),
     price: moneyFromCents(item?.price),
   })) : [];
   return {

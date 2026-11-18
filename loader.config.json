@@ -1,8 +1,8 @@
 {
   "cohort": 0,
-  "stable": "2026-11-18-review-entry",
-  "beta": "2026-11-18-review-entry",
-  "release": "2026-11-18-review-entry",
+  "stable": "2026-11-18-shopify-cart",
+  "beta": "2026-11-18-shopify-cart",
+  "release": "2026-11-18-shopify-cart",
   "keep": [
     "2026-10-26-brand-arrival",
     "2026-10-21-rebrand-spring",
@@ -10,7 +10,8 @@
     "2026-10-08-18",
     "2026-10-11-11",
     "2026-10-15-sce429",
-    "2026-10-15-sce429-r2"
+    "2026-10-15-sce429-r2",
+    "2026-11-18-review-entry"
   ],
   "pins": {
     "clubfrancaisduvin.com": "2026-09-17",
