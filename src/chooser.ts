@@ -264,7 +264,7 @@ export function ensureChooserStyles(): void {
   stylesReady = true;
 }
 
-/** Choices that unfold inside the launcher, not in a separate menu. */
+/** Offer only available entry points. Written conversation is inside the experience. */
 export function buildDockChoices(copy: AssistantCopy): HTMLElement {
   ensureChooserStyles();
   const choices = document.createElement('div');
@@ -277,7 +277,6 @@ export function buildDockChoices(copy: AssistantCopy): HTMLElement {
   track.appendChild(Object.assign(document.createElement('div'), { className: 'scenaro-dock-bar' }));
   inner.append(
     track,
-    choiceButton('chat', copy.chatLabel),
     choiceButton('immersive', copy.immersiveLabel),
   );
   choices.appendChild(inner);
@@ -374,7 +373,6 @@ export function buildChooser(copy: AssistantCopy, variant: 'popup' | 'sheet'): H
   const choices = document.createElement('div');
   Object.assign(choices.style, { display: 'flex', flexDirection: 'column', gap: '8px' });
   choices.append(
-    choiceButton('chat', copy.chatLabel),
     choiceButton('immersive', copy.immersiveLabel),
   );
   root.append(head, choices);
