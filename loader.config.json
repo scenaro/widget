@@ -1,9 +1,10 @@
 {
   "cohort": 0,
-  "stable": "2026-11-18-shopify-cart",
-  "beta": "2026-11-18-shopify-cart",
-  "release": "2026-11-18-shopify-cart",
+  "stable": "2026-11-27-shopify-preview-bar",
+  "beta": "2026-11-27-shopify-preview-bar",
+  "release": "2026-11-27-shopify-preview-bar",
   "keep": [
+    "2026-11-18-shopify-cart",
     "2026-10-26-brand-arrival",
     "2026-10-21-rebrand-spring",
     "2026-10-07-17",
