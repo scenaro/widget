@@ -1,5 +1,6 @@
 import { Connector } from '../../types';
 import { cartAddId, normalizeShopifyCart, StorefrontCart } from '../cart';
+import { applyCartSections } from './sections';
 
 interface ShopifyAjaxItem {
   id: string | number;
@@ -37,15 +38,7 @@ async function refreshThemeCart(): Promise<void> {
       headers: { Accept: 'application/json' },
     });
     if (!response.ok) return;
-    const sections = await response.json() as Record<string, string>;
-    for (const [id, html] of Object.entries(sections)) {
-      if (typeof html !== 'string' || html === '') continue;
-      const current = document.getElementById(`shopify-section-${id}`);
-      if (!current) continue;
-      const parsed = new DOMParser().parseFromString(html, 'text/html');
-      const next = parsed.getElementById(`shopify-section-${id}`);
-      if (next) current.replaceWith(next);
-    }
+    applyCartSections(await response.json() as Record<string, unknown>);
   } catch (error) {
     console.warn('[Scenaro] Shopify cart section refresh skipped:', error);
   }
