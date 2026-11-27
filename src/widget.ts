@@ -3,6 +3,7 @@ import { assistantCopy, buildChooser, buildDockChoices, buildWaiting, ensureChoo
 import { launcherMarkSvg } from './cover-loader';
 import { AppearanceName, appearanceOf, beginPageTakeover, createLoaderFrame, fadeLoader, IMMERSIVE_LOADER_STATUS, LOADER_FADE_MS, LOADER_HOLD_MS, LOADER_STATUS, PageTakeoverSession, pinHostPage, placeFixedBox, playLoader, visibleViewportBox } from './page-takeover';
 import { detectStorefront } from './storefront';
+import { avoidShopifyPreviewBar } from './shopify-preview';
 import { isIframeMessage, isWidgetPayload, postToIframe, redirectUrl } from './message-boundary';
 import { locateExperience } from './experience-location';
 import { installWidgetTelemetry } from './telemetry';
@@ -607,6 +608,7 @@ export class ScenaroWidget {
       });
       document.body.appendChild(shell);
       this.dock = shell;
+      avoidShopifyPreviewBar(shell);
       const width = Math.ceil(shell.getBoundingClientRect().width);
       shell.style.setProperty('--scenaro-closed', `${width}px`);
       return;
@@ -616,11 +618,12 @@ export class ScenaroWidget {
       Object.assign(button.style, {
         position: 'fixed',
         right: '20px',
-        bottom: '20px',
+        bottom: 'calc(20px + var(--scenaro-preview-bar-height, 0px))',
         zIndex: '2147483640',
       });
     }
     document.body.appendChild(button);
+    avoidShopifyPreviewBar(button);
   }
 
   private mountProductLauncher() {

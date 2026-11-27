@@ -116,7 +116,7 @@ export function ensureChooserStyles(): void {
 .scenaro-dock {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(20px + var(--scenaro-preview-bar-height, 0px));
   z-index: 2147483640;
   display: flex;
   flex-direction: column;
@@ -235,7 +235,7 @@ export function ensureChooserStyles(): void {
   }
   .scenaro-dock.is-open {
     right: 0;
-    bottom: 0;
+    bottom: var(--scenaro-preview-bar-height, 0px);
     width: 100%;
     max-width: 100%;
     margin: 0;
